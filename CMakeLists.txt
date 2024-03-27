@@ -20,9 +20,18 @@ message(${CMAKE_CUDA_ARCHITECTURES})
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 11)
 
+set(CUDA_HEADERS
+    include/cusadi_operations.h
+)
+
 # Set source files
 set(CUDA_SOURCES
     src/cuda_operations.cu
+)
+
+set(CUSADI_CODEGEN_SOURCES
+    # src/cusadi_operations.cuh
+    src/codegen_prototype.cu
 )
 
 set(C_SOURCES
@@ -38,5 +47,8 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 # Compile the C file separately
 add_library(cuda_libs SHARED ${CUDA_SOURCES})
 add_library(c_libs SHARED ${C_SOURCES})
-
 target_link_libraries(c_libs cuda_libs)
+
+
+add_library(cusadi SHARED ${CUSADI_CODEGEN_SOURCES})
+target_link_libraries(cusadi)

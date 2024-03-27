@@ -2,10 +2,13 @@ import ctypes
 import torch
 import time
 from casadi import *
-from python.evaluateCasADiPython import evaluateCasADiPython
+from evaluateCasADiPython import evaluateCasADiPython
 
 # Load the shared library
-libc = ctypes.CDLL('./build/libc_libs.so')
+libc = ctypes.CDLL('../build/libc_libs.so')
+test = ctypes.CDLL('../build/libcuda_libs.so')
+test.cu_test()
+
 libc.evaluateCasADiFunction.argtypes = [
     ctypes.POINTER(ctypes.POINTER(ctypes.c_float)),
     ctypes.c_int,
@@ -161,7 +164,7 @@ class CusADiFunction:
         for i in range(self.batch_size):
             f.call(input[i])
 
-f = Function.load("test.casadi")
+f = casadi.Function.load("../test.casadi")
 
 # Example data on GPU
 N_ENVS = 4096
@@ -242,30 +245,3 @@ plt.savefig('boxplot_function_evaluation_time.png')
 
 # Save the plot to a file (e.g., PNG format)
 # plt.savefig('boxplot_function_evaluation_time.png')
-
-
-
-
-'''
-
-print("test end")
-
-print("testing column addition: ")
-libc.launchMyCudaFunction(c_ptr, 0, a_ptr, 3, b_ptr, 3, N_ENVS, 5)
-torch.cuda.synchronize()
-print(a_device[0:3, :])
-print(b_device[0:3, :])
-print(c_device[0:3, :])
-
-t0 = time.time()
-for i in range(N_RUNS):
-    libc.launchMyCudaFunction(c_ptr, 0, a_ptr, 0, b_ptr, 0, N_ENVS, 5)
-torch.cuda.synchronize()
-print("CUDA wall time: ", (time.time()-t0)/N_RUNS)
-
-t0 = time.time()
-for i in range(N_RUNS):
-    c_device[:, 0] = torch.add(a_device[:, 0], b_device[:, 0])
-torch.cuda.synchronize()
-print("Pytorch wall time: ", (time.time()-t0)/N_RUNS)
-'''

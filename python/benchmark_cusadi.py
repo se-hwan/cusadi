@@ -27,6 +27,7 @@ libc.evaluateCasADiFunction.argtypes = [
     ctypes.c_int,
     ctypes.c_int]
 libc.printOperationKeys()
+libcusadi = ctypes.CDLL('../build/libcusadi.so')
 
 assert torch.cuda.is_available()
 device = torch.device("cuda")  # device object representing GPU
@@ -167,11 +168,16 @@ f = casadi.Function.load("../test.casadi")
 N_ENVS = 4096
 N_RUNS = 10
 
-N_ENVS_SWEEP = [1, 10, 50, 100, 500, 1000, 5000, 10000]
+N_ENVS_SWEEP = [1, 5, 10, 50, 100, 250, 500, 1000, 2500, 5000, 10000]
 
+t_sweep_codegen = []
 t_sweep_cusadi = []
 t_sweep_pytorch = []
 t_sweep_serial = []
+std_sweep_codegen = []
+std_sweep_cusadi = []
+std_sweep_pytorch = []
+std_sweep_serial = []
 
 for i in range(len(N_ENVS_SWEEP)):
     N_ENVS = N_ENVS_SWEEP[i]
@@ -193,6 +199,50 @@ for i in range(len(N_ENVS_SWEEP)):
     print(test_input[0])
     print(test_input[1])
 
+    ########## * CODEGEN vectorized benchmark * ##########
+    def castAsCPointer(ptr, type='float'):
+        if type == 'int':
+            return ctypes.cast(ptr, ctypes.POINTER(ctypes.c_int))
+        elif type == 'float':
+            return ctypes.cast(ptr, ctypes.POINTER(ctypes.c_float))
+    input_1_pt = torch.ones((N_ENVS, 192), device='cuda', dtype=torch.float32).contiguous()
+    input_2_pt = torch.ones((N_ENVS, 52), device='cuda', dtype=torch.float32).contiguous()
+    input_1_ptr = castAsCPointer(input_1_pt.data_ptr())
+    input_2_ptr = castAsCPointer(input_2_pt.data_ptr())
+    input_ptrs = torch.zeros(f.n_in(), device='cuda', dtype=torch.int64).contiguous()
+    input_ptrs[0] = input_1_pt.data_ptr()
+    input_ptrs[1] = input_2_pt.data_ptr()
+    fn_input = castAsCPointer(input_ptrs.data_ptr(), 'int')
+
+    work_tensor = torch.zeros(N_ENVS, f.sz_w(), device='cuda', dtype=torch.float32).contiguous()
+    fn_work = ctypes.cast((work_tensor.data_ptr()), ctypes.POINTER(ctypes.c_float))
+
+    outputs = [torch.zeros(N_ENVS, f.nnz_out(i), device='cuda', dtype=torch.float32) for i in range(f.n_out())]
+    output_ptrs = torch.zeros(f.n_out(), device='cuda', dtype=torch.int64).contiguous()
+    for i in range(f.n_out()):
+        output_ptrs[i] = outputs[i].data_ptr()
+    fn_output = castAsCPointer(output_ptrs.data_ptr(), 'int')
+
+    def evaluateCodegen():
+        for i in range(f.n_out()):
+            outputs[i] *= 0
+        # work_tensor *= 0
+        libcusadi.evaluate(fn_input,
+                        fn_work,
+                        fn_output,
+                        N_ENVS)
+    t_codegen = []
+    for i in range(N_RUNS):
+        t0 = time.time()
+        evaluateCodegen()
+        torch.cuda.synchronize()
+        duration = time.time() - t0
+        t_codegen.append(duration)
+    print("Codegen wall time: ", np.mean(t_codegen))
+    t_sweep_codegen.append(np.mean(t_codegen))
+    std_sweep_codegen.append(np.std(t_codegen))
+
+
 
     ########## * CUDA vectorized benchmark * ##########
     t_cuda = []
@@ -200,11 +250,11 @@ for i in range(len(N_ENVS_SWEEP)):
         t0 = time.time()
         cusadi_fn.evaluateVectorizedWithCUDA(test_input)
         torch.cuda.synchronize()
-        print(a_device)
         duration = time.time() - t0
         t_cuda.append(duration)
     print("CUDA wall time: ", np.mean(t_cuda))
     t_sweep_cusadi.append(np.mean(t_cuda))
+    std_sweep_cusadi.append(np.std(t_cuda))
 
 
     ########## * Pytorch vectorized benchmark * ##########
@@ -219,7 +269,7 @@ for i in range(len(N_ENVS_SWEEP)):
         t_pytorch.append(duration)
     print("Pytorch wall time: ", np.mean(t_pytorch))
     t_sweep_pytorch.append(np.mean(t_pytorch))
-
+    std_sweep_pytorch.append(np.std(t_pytorch))
 
     ########## * Serial CPU benchmark * ##########
     output_numpy = numpy.zeros((N_ENVS, f.nnz_out()))
@@ -235,21 +285,45 @@ for i in range(len(N_ENVS_SWEEP)):
         t_serial.append(duration)
     print("Computation time for ", N_ENVS, " environments serially evaluated: ", np.mean(t_serial))
     t_sweep_serial.append(np.mean(t_serial))
+    std_sweep_serial.append(np.std(t_serial))
 
-
+print(t_sweep_codegen)
 print(t_sweep_cusadi)
 print(t_sweep_pytorch)
 print(t_sweep_serial)
+print(std_sweep_codegen)
+print(std_sweep_cusadi)
+print(std_sweep_pytorch)
+print(std_sweep_serial)
 
 
 
 # PLOTTING
 import matplotlib.pyplot as plt
 
-sparse_eval = (f.call(input_val))[0]
-plt.spy(sparse_eval)
-plt.title('Sparsity pattern of dg/dx')
-plt.savefig('boxplot_function_evaluation_time.png')
+t_means = [t_sweep_codegen, t_sweep_cusadi, t_sweep_pytorch, t_sweep_serial]
+t_stds = [std_sweep_codegen, std_sweep_cusadi, std_sweep_pytorch, std_sweep_serial]
+
+
+# Plotting
+plt.figure(figsize=(10, 6))
+
+for i in range(4):
+    plt.plot(log10(N_ENVS_SWEEP), t_means[i], marker='o', linestyle='-', label=f'Line {i+1}')
+    # Adding vertical bars for standard deviations
+    plt.errorbar(log10(N_ENVS_SWEEP), t_means[i], yerr=t_stds[i], fmt='none', capsize=5, ecolor='black')
+
+plt.xlabel('Number of environments (log_10)')
+plt.ylabel('Evaluation Time (s)')
+plt.title('Function Evaluation Time Benchmarking')
+plt.legend(['CUDA + codegen', 'CUDA', 'Pytorch', 'Serial'])
+plt.show()
+
+
+# sparse_eval = (f.call(input_val))[0]
+# plt.spy(sparse_eval)
+# plt.title('Sparsity pattern of dg/dx')
+# plt.savefig('boxplot_function_evaluation_time.png')
 
 
 
@@ -263,5 +337,5 @@ plt.savefig('boxplot_function_evaluation_time.png')
 # plt.ylabel('Time (s)')
 # plt.title('Evaluation time of dg/dx')
 
-# Save the plot to a file (e.g., PNG format)
+# # Save the plot to a file (e.g., PNG format)
 # plt.savefig('boxplot_function_evaluation_time.png')

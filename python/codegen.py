@@ -17,7 +17,7 @@ nnz_in = [f.nnz_in(i) for i in range(n_in)]
 nnz_out = [f.nnz_out(i) for i in range(n_out)]
 n_w = f.sz_w()
 
-INSTR_LIMIT = 10
+INSTR_LIMIT = n_instr
 
 input_idx = []
 input_idx_lengths = [0]
@@ -39,9 +39,9 @@ codegen_strings['includes'] = '''
 #include <iostream>
 #include "include/cusadi_operations.cuh"
 '''
-codegen_strings["n_instr"] = f"\n__constant__ int n_instr = {n_instr};"
-codegen_strings["n_in"] = f"\n__constant__ int n_in = {n_in};"
-codegen_strings["n_out"] = f"\n__constant__ int n_out = {n_out};"
+# codegen_strings["n_instr"] = f"\n__constant__ int n_instr = {n_instr};"
+# codegen_strings["n_in"] = f"\n__constant__ int n_in = {n_in};"
+# codegen_strings["n_out"] = f"\n__constant__ int n_out = {n_out};"
 codegen_strings["nnz_in"] = f"\n__constant__ int nnz_in[] = {{{','.join(map(str, nnz_in))}}};"
 codegen_strings["nnz_out"] = f"\n__constant__ int nnz_out[] = {{{','.join(map(str, nnz_out))}}};"
 codegen_strings["n_w"] = f"\n__constant__ int n_w = {n_w};\n"
@@ -89,11 +89,11 @@ for k in range(INSTR_LIMIT):
         elif op == OP_DIV:
             str_kernel += f"\n        work[idx * n_w + {o_idx}] = work[idx * n_w + {i_idx}] / work[idx * n_w + {input_idx[i_instr + 1]}];"
         elif op == OP_SIN:
-            str_kernel += f"\n        work[idx * n_w + {o_idx}] = sin(work[idx * n_w + {i_idx}]);"
+            str_kernel += f"\n        work[idx * n_w + {o_idx}] = sinf(work[idx * n_w + {i_idx}]);"
         elif op == OP_COS:
-            str_kernel += f"\n        work[idx * n_w + {o_idx}] = cos(work[idx * n_w + {i_idx}]);"
+            str_kernel += f"\n        work[idx * n_w + {o_idx}] = cosf(work[idx * n_w + {i_idx}]);"
         elif op == OP_TAN:
-            str_kernel += f"\n        work[idx * n_w + {o_idx}] = tan(work[idx * n_w + {i_idx}]);"
+            str_kernel += f"\n        work[idx * n_w + {o_idx}] = tanf(work[idx * n_w + {i_idx}]);"
         elif op == OP_SQ:
             str_kernel += f"\n        work[idx * n_w + {o_idx}] = work[idx * n_w + {i_idx}] * work[idx * n_w + {i_idx}];"
         elif op == OP_SQRT:

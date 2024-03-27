@@ -1,6 +1,7 @@
 #ifndef MAIN_H
 #define MAIN_H
 #include <stdio.h>
+#include <stdlib.h>
 
 extern void cu_assign_const(float *out, const int col_out, const int sz_out,
                             const float in,

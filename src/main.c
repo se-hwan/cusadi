@@ -33,7 +33,7 @@ void evaluateCasADiFunction(float *outputs[],
     // printf("Outputs vector test: %f\n", outputs[0]);
     // printf("Outputs vector test: %p\n", outputs[0]);
     
-    printf("Inputs vector test: %p\n", inputs[0]);
+    // printf("Inputs vector test: %p\n", inputs[0]);
 
     struct CasADiFunctionParameters f_info = {
         .o_instr = 0,

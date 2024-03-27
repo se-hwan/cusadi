@@ -5,7 +5,7 @@ from casadi import *
 from evaluateCasADiPython import evaluateCasADiPython
 
 # Load the shared library
-libc = ctypes.CDLL('./build/libc_libs.so')
+libc = ctypes.CDLL('../build/libc_libs.so')
 libc.evaluateCasADiFunction.argtypes = [
     ctypes.POINTER(ctypes.POINTER(ctypes.c_float)),
     ctypes.c_int,
@@ -161,63 +161,86 @@ class CusADiFunction:
         for i in range(self.batch_size):
             f.call(input[i])
 
-f = casadi.Function.load("test.casadi")
+f = casadi.Function.load("../test.casadi")
 
 # Example data on GPU
 N_ENVS = 4096
-N_RUNS = 1
+N_RUNS = 10
 
-cusadi_fn = CusADiFunction(f, N_ENVS)
-cusadi_fn.setBenchmarkingMode()
+N_ENVS_SWEEP = [1, 10, 50, 100, 500, 1000, 5000, 10000]
 
-a_device = torch.ones((N_ENVS, 192), device='cuda', dtype=torch.float32)
-b_device = torch.ones((N_ENVS, 52), device='cuda', dtype=torch.float32)
-a_ptr = cusadi_fn.castAsCPointer(a_device.data_ptr())
-b_ptr = cusadi_fn.castAsCPointer(b_device.data_ptr())
-test_ptr = [a_ptr, b_ptr]
-test_input = (ctypes.POINTER(ctypes.c_float) * len(test_ptr))(*test_ptr)
-print(test_input)
-print(len(test_input))
-print(a_device[0, 0])
+t_sweep_cusadi = []
+t_sweep_pytorch = []
+t_sweep_serial = []
 
+for i in range(len(N_ENVS_SWEEP)):
+    N_ENVS = N_ENVS_SWEEP[i]
 
-########## * CUDA vectorized benchmark * ##########
-t_cuda = []
-for i in range(N_RUNS):
-    t0 = time.time()
-    cusadi_fn.evaluateVectorizedWithCUDA(test_input)
-    torch.cuda.synchronize()
-    duration = time.time() - t0
-    t_cuda.append(duration)
-print("CUDA wall time: ", duration)
+    cusadi_fn = CusADiFunction(f, N_ENVS)
+    cusadi_fn.setBenchmarkingMode()
 
+    a_device = torch.ones((N_ENVS, 192), device='cuda', dtype=torch.float32)
+    b_device = torch.ones((N_ENVS, 52), device='cuda', dtype=torch.float32)
+    a_ptr = cusadi_fn.castAsCPointer(a_device.data_ptr())
+    b_ptr = cusadi_fn.castAsCPointer(b_device.data_ptr())
+    test_ptr = [a_ptr, b_ptr]
+    test_input = (ctypes.POINTER(ctypes.c_float) * len(test_ptr))(*test_ptr)
+    # print(test_input)
+    # print(len(test_input))
+    # print(a_device[0, 0])
 
-########## * Pytorch vectorized benchmark * ##########
-pytorch_input = [torch.ones((N_ENVS, 192), device='cuda', dtype=torch.float32),
-                 torch.ones((N_ENVS, 52), device='cuda', dtype=torch.float32)]
-t_pytorch = []
-for i in range(N_RUNS):
-    t0 = time.time()
-    cusadi_fn.evaluateVectorizedWithPytorch(pytorch_input)
-    torch.cuda.synchronize()
-    duration = time.time() - t0
-    t_pytorch.append(duration)
-print("Pytorch wall time: ", duration)
+    print(test_input)
+    print(test_input[0])
+    print(test_input[1])
 
 
-########## * Serial CPU benchmark * ##########
-output_numpy = numpy.zeros((N_ENVS, f.nnz_out()))
-t_serial = []
-for j in range(N_RUNS):
-    time_start = time.time()
-    for i in range(N_ENVS):
-        input_val = [numpy.ones((192, 1)), \
-                    numpy.ones((52, 1))]
-        output_numpy[i, :] = (f.call(input_val))[0].nonzeros()
-        test = torch.from_numpy(output_numpy[i, :]).to('cuda')
-    duration = time.time() - time_start
-    t_serial.append(duration)
-print("Computation time for ", N_ENVS, " environments serially evaluated and moved to GPU: ", duration)
+    ########## * CUDA vectorized benchmark * ##########
+    t_cuda = []
+    for i in range(N_RUNS):
+        t0 = time.time()
+        cusadi_fn.evaluateVectorizedWithCUDA(test_input)
+        torch.cuda.synchronize()
+        print(a_device)
+        duration = time.time() - t0
+        t_cuda.append(duration)
+    print("CUDA wall time: ", np.mean(t_cuda))
+    t_sweep_cusadi.append(np.mean(t_cuda))
+
+
+    ########## * Pytorch vectorized benchmark * ##########
+    pytorch_input = [torch.ones((N_ENVS, 192), device='cuda', dtype=torch.float32),
+                    torch.ones((N_ENVS, 52), device='cuda', dtype=torch.float32)]
+    t_pytorch = []
+    for i in range(N_RUNS):
+        t0 = time.time()
+        cusadi_fn.evaluateVectorizedWithPytorch(pytorch_input)
+        torch.cuda.synchronize()
+        duration = time.time() - t0
+        t_pytorch.append(duration)
+    print("Pytorch wall time: ", np.mean(t_pytorch))
+    t_sweep_pytorch.append(np.mean(t_pytorch))
+
+
+    ########## * Serial CPU benchmark * ##########
+    output_numpy = numpy.zeros((N_ENVS, f.nnz_out()))
+    t_serial = []
+    for j in range(N_RUNS):
+        time_start = time.time()
+        for i in range(N_ENVS):
+            input_val = [numpy.ones((192, 1)), \
+                        numpy.ones((52, 1))]
+            output_numpy[i, :] = (f.call(input_val))[0].nonzeros()
+            # test = torch.from_numpy(output_numpy[i, :]).to('cuda')
+        duration = time.time() - time_start
+        t_serial.append(duration)
+    print("Computation time for ", N_ENVS, " environments serially evaluated: ", np.mean(t_serial))
+    t_sweep_serial.append(np.mean(t_serial))
+
+
+print(t_sweep_cusadi)
+print(t_sweep_pytorch)
+print(t_sweep_serial)
+
 
 
 # PLOTTING

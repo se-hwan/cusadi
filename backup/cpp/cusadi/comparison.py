@@ -6,7 +6,7 @@ from casadi import *
 # Our module!
 import lltm_cpp
 import lltm_cuda
-from evaluateCasADiPython import evaluateCasADiPython
+from python.evaluateCasADiPython import evaluateCasADiPython
 
 assert torch.cuda.is_available()
 device = torch.device("cuda")  # device object representing GPU

@@ -1,3 +1,6 @@
+#ifndef _CUSADI_OPERATIONS_H_
+#define _CUSADI_OPERATIONS_H_
+
 #include <cuda_runtime.h>
 #include <cmath>
 #include <iostream>
@@ -11,7 +14,6 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
       if (abort) exit(code);
    }
 }
-
 /*
 ARCHITECTURE:
 __device__ void evaluate_fn_kernel() {
@@ -245,3 +247,5 @@ __device__ void tanInput(float* __restrict__ out, const int col_out, const int s
     }
 }
 
+
+#endif // _CUSADI_OPERATIONS_H_

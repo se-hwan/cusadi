@@ -153,7 +153,6 @@ __global__ void tan_kernel(float* __restrict__ out, const int col_out, const int
 /************************* EXTERNAL WRAPPER FUNCTIONS *************************/
 // TODO: remove error checking once functions have been tested
 // TODO: unit tests for each function
-
 extern "C" {
     void cu_test() {
         printf("Hello from CUDA!\n");

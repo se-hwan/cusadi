@@ -23,11 +23,11 @@ class CusADiFunction:
 
     # ? How to best load the library? 
     # Public methods:
-    def __init__(self, fn_casadi, num_instances):
+    def __init__(self, fn_casadi, num_instances, lib_filepath='../build/libcusadi.so'):
         assert torch.cuda.is_available()
         self.fn_casadi = fn_casadi
         self.num_instances = num_instances
-        self._fn_library = ctypes.CDLL('../build/libcusadi.so')
+        self._fn_library = ctypes.CDLL(lib_filepath)
         self._setup()
 
     def evaluate(self, inputs):

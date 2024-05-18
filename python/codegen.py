@@ -1,7 +1,7 @@
 from casadi import *
 from CusadiOperations import OP_CUDA_DICT
 
-f = casadi.Function.load("../test.casadi")
+f = casadi.Function.load("../inertial_quantities.casadi")
 codegen_file = open(r"../src/codegen_prototype.cu", "w+")
 codegen_strings = {}
 

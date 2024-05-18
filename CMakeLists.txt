@@ -30,8 +30,7 @@ set(CUDA_SOURCES
 )
 
 set(CUSADI_CODEGEN_SOURCES
-    # src/cusadi_operations.cuh
-    src/codegen_prototype.cu
+    src/codegen_prototype_orig.cu
 )
 
 set(C_SOURCES

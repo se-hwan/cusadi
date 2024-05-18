@@ -18,18 +18,18 @@ __global__ void evaluate_kernel (
 
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < batch_size) {
-        work[idx * n_w + 0] = 0.050000;
+        work[idx * n_w + 0] = 0.05;
         work[idx * n_w + 1] = inputs[1][idx * nnz_in[1] + 13];
         work[idx * n_w + 2] = inputs[0][idx * nnz_in[0] + 2];
-        work[idx * n_w + 3] = sin(work[idx * n_w + 2]);
+        work[idx * n_w + 3] = sinf(work[idx * n_w + 2]);
         work[idx * n_w + 4] = inputs[0][idx * nnz_in[0] + 0];
-        work[idx * n_w + 5] = sin(work[idx * n_w + 4]);
+        work[idx * n_w + 5] = sinf(work[idx * n_w + 4]);
         work[idx * n_w + 6] = work[idx * n_w + 3] * work[idx * n_w + 5];
-        work[idx * n_w + 2] = cos(work[idx * n_w + 2]);
+        work[idx * n_w + 2] = cosf(work[idx * n_w + 2]);
         work[idx * n_w + 7] = inputs[0][idx * nnz_in[0] + 1];
-        work[idx * n_w + 8] = sin(work[idx * n_w + 7]);
+        work[idx * n_w + 8] = sinf(work[idx * n_w + 7]);
         work[idx * n_w + 9] = work[idx * n_w + 2] * work[idx * n_w + 8];
-        work[idx * n_w + 4] = cos(work[idx * n_w + 4]);
+        work[idx * n_w + 4] = cosf(work[idx * n_w + 4]);
         work[idx * n_w + 10] = work[idx * n_w + 9] * work[idx * n_w + 4];
         work[idx * n_w + 6] = work[idx * n_w + 6] + work[idx * n_w + 10];
         work[idx * n_w + 10] = inputs[1][idx * nnz_in[1] + 173];
@@ -74,7 +74,7 @@ __global__ void evaluate_kernel (
         work[idx * n_w + 27] = work[idx * n_w + 27] + work[idx * n_w + 32];
         work[idx * n_w + 32] = work[idx * n_w + 25] * work[idx * n_w + 27];
         work[idx * n_w + 21] = work[idx * n_w + 21] + work[idx * n_w + 32];
-        work[idx * n_w + 32] = cos(work[idx * n_w + 7]);
+        work[idx * n_w + 32] = cosf(work[idx * n_w + 7]);
         work[idx * n_w + 34] = work[idx * n_w + 32] * work[idx * n_w + 4];
         work[idx * n_w + 35] = work[idx * n_w + 30] * work[idx * n_w + 18];
         work[idx * n_w + 36] = work[idx * n_w + 12] * work[idx * n_w + 26];
@@ -145,7 +145,7 @@ __global__ void evaluate_kernel (
         work[idx * n_w + 45] = work[idx * n_w + 0] * work[idx * n_w + 45];
         work[idx * n_w + 45] = -work[idx * n_w + 45];
         outputs[0][idx * nnz_out[0] + 4] = work[idx * n_w + 45];
-        work[idx * n_w + 45] = 1.000000;
+        work[idx * n_w + 45] = 1.0;
         work[idx * n_w + 49] = work[idx * n_w + 2] / work[idx * n_w + 32];
         work[idx * n_w + 50] = work[idx * n_w + 0] * work[idx * n_w + 49];
         work[idx * n_w + 51] = work[idx * n_w + 50] * work[idx * n_w + 6];
@@ -177,7 +177,7 @@ __global__ void evaluate_kernel (
         work[idx * n_w + 55] = work[idx * n_w + 55] - work[idx * n_w + 58];
         work[idx * n_w + 55] = -work[idx * n_w + 55];
         outputs[0][idx * nnz_out[0] + 6] = work[idx * n_w + 55];
-        work[idx * n_w + 7] = tan(work[idx * n_w + 7]);
+        work[idx * n_w + 7] = tanf(work[idx * n_w + 7]);
         work[idx * n_w + 55] = work[idx * n_w + 2] * work[idx * n_w + 7];
         work[idx * n_w + 55] = work[idx * n_w + 0] * work[idx * n_w + 55];
         work[idx * n_w + 58] = work[idx * n_w + 55] * work[idx * n_w + 6];
@@ -652,7 +652,7 @@ __global__ void evaluate_kernel (
         work[idx * n_w + 52] = work[idx * n_w + 0] * work[idx * n_w + 52];
         work[idx * n_w + 52] = -work[idx * n_w + 52];
         outputs[0][idx * nnz_out[0] + 39] = work[idx * n_w + 52];
-        work[idx * n_w + 52] = -1.000000;
+        work[idx * n_w + 52] = -1.0;
         outputs[0][idx * nnz_out[0] + 40] = work[idx * n_w + 52];
         outputs[0][idx * nnz_out[0] + 41] = work[idx * n_w + 45];
         work[idx * n_w + 6] = work[idx * n_w + 26] + work[idx * n_w + 31];
@@ -869,15 +869,15 @@ __global__ void evaluate_kernel (
         outputs[0][idx * nnz_out[0] + 69] = work[idx * n_w + 45];
         outputs[0][idx * nnz_out[0] + 70] = work[idx * n_w + 45];
         work[idx * n_w + 60] = inputs[0][idx * nnz_in[0] + 14];
-        work[idx * n_w + 13] = sin(work[idx * n_w + 60]);
+        work[idx * n_w + 13] = sinf(work[idx * n_w + 60]);
         work[idx * n_w + 46] = inputs[0][idx * nnz_in[0] + 12];
-        work[idx * n_w + 68] = sin(work[idx * n_w + 46]);
+        work[idx * n_w + 68] = sinf(work[idx * n_w + 46]);
         work[idx * n_w + 23] = work[idx * n_w + 13] * work[idx * n_w + 68];
-        work[idx * n_w + 60] = cos(work[idx * n_w + 60]);
+        work[idx * n_w + 60] = cosf(work[idx * n_w + 60]);
         work[idx * n_w + 31] = inputs[0][idx * nnz_in[0] + 13];
-        work[idx * n_w + 6] = sin(work[idx * n_w + 31]);
+        work[idx * n_w + 6] = sinf(work[idx * n_w + 31]);
         work[idx * n_w + 20] = work[idx * n_w + 60] * work[idx * n_w + 6];
-        work[idx * n_w + 46] = cos(work[idx * n_w + 46]);
+        work[idx * n_w + 46] = cosf(work[idx * n_w + 46]);
         work[idx * n_w + 58] = work[idx * n_w + 20] * work[idx * n_w + 46];
         work[idx * n_w + 23] = work[idx * n_w + 23] + work[idx * n_w + 58];
         work[idx * n_w + 58] = inputs[0][idx * nnz_in[0] + 16];
@@ -916,7 +916,7 @@ __global__ void evaluate_kernel (
         work[idx * n_w + 74] = work[idx * n_w + 74] + work[idx * n_w + 78];
         work[idx * n_w + 78] = work[idx * n_w + 72] * work[idx * n_w + 74];
         work[idx * n_w + 65] = work[idx * n_w + 65] + work[idx * n_w + 78];
-        work[idx * n_w + 78] = cos(work[idx * n_w + 31]);
+        work[idx * n_w + 78] = cosf(work[idx * n_w + 31]);
         work[idx * n_w + 79] = work[idx * n_w + 78] * work[idx * n_w + 46];
         work[idx * n_w + 80] = work[idx * n_w + 76] * work[idx * n_w + 40];
         work[idx * n_w + 81] = work[idx * n_w + 7] * work[idx * n_w + 73];
@@ -1011,7 +1011,7 @@ __global__ void evaluate_kernel (
         work[idx * n_w + 92] = work[idx * n_w + 92] - work[idx * n_w + 95];
         work[idx * n_w + 92] = -work[idx * n_w + 92];
         outputs[0][idx * nnz_out[0] + 77] = work[idx * n_w + 92];
-        work[idx * n_w + 31] = tan(work[idx * n_w + 31]);
+        work[idx * n_w + 31] = tanf(work[idx * n_w + 31]);
         work[idx * n_w + 92] = work[idx * n_w + 60] * work[idx * n_w + 31];
         work[idx * n_w + 92] = work[idx * n_w + 0] * work[idx * n_w + 92];
         work[idx * n_w + 95] = work[idx * n_w + 92] * work[idx * n_w + 23];
@@ -1763,15 +1763,15 @@ __global__ void evaluate_kernel (
         outputs[0][idx * nnz_out[0] + 157] = work[idx * n_w + 52];
         outputs[0][idx * nnz_out[0] + 158] = work[idx * n_w + 45];
         work[idx * n_w + 55] = inputs[0][idx * nnz_in[0] + 26];
-        work[idx * n_w + 64] = sin(work[idx * n_w + 55]);
+        work[idx * n_w + 64] = sinf(work[idx * n_w + 55]);
         work[idx * n_w + 40] = inputs[0][idx * nnz_in[0] + 24];
-        work[idx * n_w + 73] = sin(work[idx * n_w + 40]);
+        work[idx * n_w + 73] = sinf(work[idx * n_w + 40]);
         work[idx * n_w + 54] = work[idx * n_w + 64] * work[idx * n_w + 73];
-        work[idx * n_w + 55] = cos(work[idx * n_w + 55]);
+        work[idx * n_w + 55] = cosf(work[idx * n_w + 55]);
         work[idx * n_w + 56] = inputs[0][idx * nnz_in[0] + 25];
-        work[idx * n_w + 59] = sin(work[idx * n_w + 56]);
+        work[idx * n_w + 59] = sinf(work[idx * n_w + 56]);
         work[idx * n_w + 51] = work[idx * n_w + 55] * work[idx * n_w + 59];
-        work[idx * n_w + 40] = cos(work[idx * n_w + 40]);
+        work[idx * n_w + 40] = cosf(work[idx * n_w + 40]);
         work[idx * n_w + 57] = work[idx * n_w + 51] * work[idx * n_w + 40];
         work[idx * n_w + 54] = work[idx * n_w + 54] + work[idx * n_w + 57];
         work[idx * n_w + 57] = inputs[0][idx * nnz_in[0] + 28];
@@ -1810,7 +1810,7 @@ __global__ void evaluate_kernel (
         work[idx * n_w + 83] = work[idx * n_w + 83] + work[idx * n_w + 65];
         work[idx * n_w + 65] = work[idx * n_w + 97] * work[idx * n_w + 83];
         work[idx * n_w + 27] = work[idx * n_w + 27] + work[idx * n_w + 65];
-        work[idx * n_w + 65] = cos(work[idx * n_w + 56]);
+        work[idx * n_w + 65] = cosf(work[idx * n_w + 56]);
         work[idx * n_w + 81] = work[idx * n_w + 65] * work[idx * n_w + 40];
         work[idx * n_w + 60] = work[idx * n_w + 82] * work[idx * n_w + 47];
         work[idx * n_w + 31] = work[idx * n_w + 50] * work[idx * n_w + 46];
@@ -1905,7 +1905,7 @@ __global__ void evaluate_kernel (
         work[idx * n_w + 107] = work[idx * n_w + 107] - work[idx * n_w + 110];
         work[idx * n_w + 107] = -work[idx * n_w + 107];
         outputs[0][idx * nnz_out[0] + 165] = work[idx * n_w + 107];
-        work[idx * n_w + 56] = tan(work[idx * n_w + 56]);
+        work[idx * n_w + 56] = tanf(work[idx * n_w + 56]);
         work[idx * n_w + 107] = work[idx * n_w + 55] * work[idx * n_w + 56];
         work[idx * n_w + 107] = work[idx * n_w + 0] * work[idx * n_w + 107];
         work[idx * n_w + 110] = work[idx * n_w + 107] * work[idx * n_w + 54];
@@ -2657,15 +2657,15 @@ __global__ void evaluate_kernel (
         outputs[0][idx * nnz_out[0] + 245] = work[idx * n_w + 52];
         outputs[0][idx * nnz_out[0] + 246] = work[idx * n_w + 45];
         work[idx * n_w + 92] = inputs[0][idx * nnz_in[0] + 38];
-        work[idx * n_w + 100] = sin(work[idx * n_w + 92]);
+        work[idx * n_w + 100] = sinf(work[idx * n_w + 92]);
         work[idx * n_w + 47] = inputs[0][idx * nnz_in[0] + 36];
-        work[idx * n_w + 46] = sin(work[idx * n_w + 47]);
+        work[idx * n_w + 46] = sinf(work[idx * n_w + 47]);
         work[idx * n_w + 91] = work[idx * n_w + 100] * work[idx * n_w + 46];
-        work[idx * n_w + 92] = cos(work[idx * n_w + 92]);
+        work[idx * n_w + 92] = cosf(work[idx * n_w + 92]);
         work[idx * n_w + 93] = inputs[0][idx * nnz_in[0] + 37];
-        work[idx * n_w + 96] = sin(work[idx * n_w + 93]);
+        work[idx * n_w + 96] = sinf(work[idx * n_w + 93]);
         work[idx * n_w + 88] = work[idx * n_w + 92] * work[idx * n_w + 96];
-        work[idx * n_w + 47] = cos(work[idx * n_w + 47]);
+        work[idx * n_w + 47] = cosf(work[idx * n_w + 47]);
         work[idx * n_w + 94] = work[idx * n_w + 88] * work[idx * n_w + 47];
         work[idx * n_w + 91] = work[idx * n_w + 91] + work[idx * n_w + 94];
         work[idx * n_w + 94] = inputs[0][idx * nnz_in[0] + 40];
@@ -2704,7 +2704,7 @@ __global__ void evaluate_kernel (
         work[idx * n_w + 103] = work[idx * n_w + 103] + work[idx * n_w + 27];
         work[idx * n_w + 27] = work[idx * n_w + 112] * work[idx * n_w + 103];
         work[idx * n_w + 95] = work[idx * n_w + 95] + work[idx * n_w + 27];
-        work[idx * n_w + 27] = cos(work[idx * n_w + 93]);
+        work[idx * n_w + 27] = cosf(work[idx * n_w + 93]);
         work[idx * n_w + 31] = work[idx * n_w + 27] * work[idx * n_w + 47];
         work[idx * n_w + 55] = work[idx * n_w + 13] * work[idx * n_w + 3];
         work[idx * n_w + 56] = work[idx * n_w + 87] * work[idx * n_w + 40];
@@ -2799,7 +2799,7 @@ __global__ void evaluate_kernel (
         work[idx * n_w + 122] = work[idx * n_w + 122] - work[idx * n_w + 125];
         work[idx * n_w + 122] = -work[idx * n_w + 122];
         outputs[0][idx * nnz_out[0] + 253] = work[idx * n_w + 122];
-        work[idx * n_w + 93] = tan(work[idx * n_w + 93]);
+        work[idx * n_w + 93] = tanf(work[idx * n_w + 93]);
         work[idx * n_w + 122] = work[idx * n_w + 92] * work[idx * n_w + 93];
         work[idx * n_w + 122] = work[idx * n_w + 0] * work[idx * n_w + 122];
         work[idx * n_w + 125] = work[idx * n_w + 122] * work[idx * n_w + 91];
@@ -3551,15 +3551,15 @@ __global__ void evaluate_kernel (
         outputs[0][idx * nnz_out[0] + 333] = work[idx * n_w + 52];
         outputs[0][idx * nnz_out[0] + 334] = work[idx * n_w + 45];
         work[idx * n_w + 107] = inputs[0][idx * nnz_in[0] + 50];
-        work[idx * n_w + 115] = sin(work[idx * n_w + 107]);
+        work[idx * n_w + 115] = sinf(work[idx * n_w + 107]);
         work[idx * n_w + 3] = inputs[0][idx * nnz_in[0] + 48];
-        work[idx * n_w + 40] = sin(work[idx * n_w + 3]);
+        work[idx * n_w + 40] = sinf(work[idx * n_w + 3]);
         work[idx * n_w + 106] = work[idx * n_w + 115] * work[idx * n_w + 40];
-        work[idx * n_w + 107] = cos(work[idx * n_w + 107]);
+        work[idx * n_w + 107] = cosf(work[idx * n_w + 107]);
         work[idx * n_w + 108] = inputs[0][idx * nnz_in[0] + 49];
-        work[idx * n_w + 111] = sin(work[idx * n_w + 108]);
+        work[idx * n_w + 111] = sinf(work[idx * n_w + 108]);
         work[idx * n_w + 101] = work[idx * n_w + 107] * work[idx * n_w + 111];
-        work[idx * n_w + 3] = cos(work[idx * n_w + 3]);
+        work[idx * n_w + 3] = cosf(work[idx * n_w + 3]);
         work[idx * n_w + 109] = work[idx * n_w + 101] * work[idx * n_w + 3];
         work[idx * n_w + 106] = work[idx * n_w + 106] + work[idx * n_w + 109];
         work[idx * n_w + 109] = inputs[0][idx * nnz_in[0] + 52];
@@ -3598,7 +3598,7 @@ __global__ void evaluate_kernel (
         work[idx * n_w + 118] = work[idx * n_w + 118] + work[idx * n_w + 95];
         work[idx * n_w + 95] = work[idx * n_w + 127] * work[idx * n_w + 118];
         work[idx * n_w + 110] = work[idx * n_w + 110] + work[idx * n_w + 95];
-        work[idx * n_w + 95] = cos(work[idx * n_w + 108]);
+        work[idx * n_w + 95] = cosf(work[idx * n_w + 108]);
         work[idx * n_w + 56] = work[idx * n_w + 95] * work[idx * n_w + 3];
         work[idx * n_w + 92] = work[idx * n_w + 64] * work[idx * n_w + 53];
         work[idx * n_w + 93] = work[idx * n_w + 74] * work[idx * n_w + 47];
@@ -3693,7 +3693,7 @@ __global__ void evaluate_kernel (
         work[idx * n_w + 137] = work[idx * n_w + 137] - work[idx * n_w + 140];
         work[idx * n_w + 137] = -work[idx * n_w + 137];
         outputs[0][idx * nnz_out[0] + 341] = work[idx * n_w + 137];
-        work[idx * n_w + 108] = tan(work[idx * n_w + 108]);
+        work[idx * n_w + 108] = tanf(work[idx * n_w + 108]);
         work[idx * n_w + 137] = work[idx * n_w + 107] * work[idx * n_w + 108];
         work[idx * n_w + 137] = work[idx * n_w + 0] * work[idx * n_w + 137];
         work[idx * n_w + 140] = work[idx * n_w + 137] * work[idx * n_w + 106];
@@ -4445,15 +4445,15 @@ __global__ void evaluate_kernel (
         outputs[0][idx * nnz_out[0] + 421] = work[idx * n_w + 52];
         outputs[0][idx * nnz_out[0] + 422] = work[idx * n_w + 45];
         work[idx * n_w + 122] = inputs[0][idx * nnz_in[0] + 62];
-        work[idx * n_w + 130] = sin(work[idx * n_w + 122]);
+        work[idx * n_w + 130] = sinf(work[idx * n_w + 122]);
         work[idx * n_w + 53] = inputs[0][idx * nnz_in[0] + 60];
-        work[idx * n_w + 47] = sin(work[idx * n_w + 53]);
+        work[idx * n_w + 47] = sinf(work[idx * n_w + 53]);
         work[idx * n_w + 121] = work[idx * n_w + 130] * work[idx * n_w + 47];
-        work[idx * n_w + 122] = cos(work[idx * n_w + 122]);
+        work[idx * n_w + 122] = cosf(work[idx * n_w + 122]);
         work[idx * n_w + 123] = inputs[0][idx * nnz_in[0] + 61];
-        work[idx * n_w + 126] = sin(work[idx * n_w + 123]);
+        work[idx * n_w + 126] = sinf(work[idx * n_w + 123]);
         work[idx * n_w + 116] = work[idx * n_w + 122] * work[idx * n_w + 126];
-        work[idx * n_w + 53] = cos(work[idx * n_w + 53]);
+        work[idx * n_w + 53] = cosf(work[idx * n_w + 53]);
         work[idx * n_w + 124] = work[idx * n_w + 116] * work[idx * n_w + 53];
         work[idx * n_w + 121] = work[idx * n_w + 121] + work[idx * n_w + 124];
         work[idx * n_w + 124] = inputs[0][idx * nnz_in[0] + 64];
@@ -4492,7 +4492,7 @@ __global__ void evaluate_kernel (
         work[idx * n_w + 133] = work[idx * n_w + 133] + work[idx * n_w + 110];
         work[idx * n_w + 110] = work[idx * n_w + 142] * work[idx * n_w + 133];
         work[idx * n_w + 125] = work[idx * n_w + 125] + work[idx * n_w + 110];
-        work[idx * n_w + 110] = cos(work[idx * n_w + 123]);
+        work[idx * n_w + 110] = cosf(work[idx * n_w + 123]);
         work[idx * n_w + 93] = work[idx * n_w + 110] * work[idx * n_w + 53];
         work[idx * n_w + 107] = work[idx * n_w + 100] * work[idx * n_w + 90];
         work[idx * n_w + 108] = work[idx * n_w + 83] * work[idx * n_w + 3];
@@ -4587,7 +4587,7 @@ __global__ void evaluate_kernel (
         work[idx * n_w + 152] = work[idx * n_w + 152] - work[idx * n_w + 155];
         work[idx * n_w + 152] = -work[idx * n_w + 152];
         outputs[0][idx * nnz_out[0] + 429] = work[idx * n_w + 152];
-        work[idx * n_w + 123] = tan(work[idx * n_w + 123]);
+        work[idx * n_w + 123] = tanf(work[idx * n_w + 123]);
         work[idx * n_w + 152] = work[idx * n_w + 122] * work[idx * n_w + 123];
         work[idx * n_w + 152] = work[idx * n_w + 0] * work[idx * n_w + 152];
         work[idx * n_w + 155] = work[idx * n_w + 152] * work[idx * n_w + 121];
@@ -5339,15 +5339,15 @@ __global__ void evaluate_kernel (
         outputs[0][idx * nnz_out[0] + 509] = work[idx * n_w + 52];
         outputs[0][idx * nnz_out[0] + 510] = work[idx * n_w + 45];
         work[idx * n_w + 137] = inputs[0][idx * nnz_in[0] + 74];
-        work[idx * n_w + 145] = sin(work[idx * n_w + 137]);
+        work[idx * n_w + 145] = sinf(work[idx * n_w + 137]);
         work[idx * n_w + 90] = inputs[0][idx * nnz_in[0] + 72];
-        work[idx * n_w + 3] = sin(work[idx * n_w + 90]);
+        work[idx * n_w + 3] = sinf(work[idx * n_w + 90]);
         work[idx * n_w + 136] = work[idx * n_w + 145] * work[idx * n_w + 3];
-        work[idx * n_w + 137] = cos(work[idx * n_w + 137]);
+        work[idx * n_w + 137] = cosf(work[idx * n_w + 137]);
         work[idx * n_w + 138] = inputs[0][idx * nnz_in[0] + 73];
-        work[idx * n_w + 141] = sin(work[idx * n_w + 138]);
+        work[idx * n_w + 141] = sinf(work[idx * n_w + 138]);
         work[idx * n_w + 131] = work[idx * n_w + 137] * work[idx * n_w + 141];
-        work[idx * n_w + 90] = cos(work[idx * n_w + 90]);
+        work[idx * n_w + 90] = cosf(work[idx * n_w + 90]);
         work[idx * n_w + 139] = work[idx * n_w + 131] * work[idx * n_w + 90];
         work[idx * n_w + 136] = work[idx * n_w + 136] + work[idx * n_w + 139];
         work[idx * n_w + 139] = inputs[0][idx * nnz_in[0] + 76];
@@ -5386,7 +5386,7 @@ __global__ void evaluate_kernel (
         work[idx * n_w + 148] = work[idx * n_w + 148] + work[idx * n_w + 125];
         work[idx * n_w + 125] = work[idx * n_w + 157] * work[idx * n_w + 148];
         work[idx * n_w + 140] = work[idx * n_w + 140] + work[idx * n_w + 125];
-        work[idx * n_w + 125] = cos(work[idx * n_w + 138]);
+        work[idx * n_w + 125] = cosf(work[idx * n_w + 138]);
         work[idx * n_w + 108] = work[idx * n_w + 125] * work[idx * n_w + 90];
         work[idx * n_w + 122] = work[idx * n_w + 115] * work[idx * n_w + 20];
         work[idx * n_w + 123] = work[idx * n_w + 103] * work[idx * n_w + 53];
@@ -5481,7 +5481,7 @@ __global__ void evaluate_kernel (
         work[idx * n_w + 167] = work[idx * n_w + 167] - work[idx * n_w + 170];
         work[idx * n_w + 167] = -work[idx * n_w + 167];
         outputs[0][idx * nnz_out[0] + 517] = work[idx * n_w + 167];
-        work[idx * n_w + 138] = tan(work[idx * n_w + 138]);
+        work[idx * n_w + 138] = tanf(work[idx * n_w + 138]);
         work[idx * n_w + 167] = work[idx * n_w + 137] * work[idx * n_w + 138];
         work[idx * n_w + 167] = work[idx * n_w + 0] * work[idx * n_w + 167];
         work[idx * n_w + 170] = work[idx * n_w + 167] * work[idx * n_w + 136];
@@ -6233,15 +6233,15 @@ __global__ void evaluate_kernel (
         outputs[0][idx * nnz_out[0] + 597] = work[idx * n_w + 52];
         outputs[0][idx * nnz_out[0] + 598] = work[idx * n_w + 45];
         work[idx * n_w + 152] = inputs[0][idx * nnz_in[0] + 86];
-        work[idx * n_w + 160] = sin(work[idx * n_w + 152]);
+        work[idx * n_w + 160] = sinf(work[idx * n_w + 152]);
         work[idx * n_w + 20] = inputs[0][idx * nnz_in[0] + 84];
-        work[idx * n_w + 53] = sin(work[idx * n_w + 20]);
+        work[idx * n_w + 53] = sinf(work[idx * n_w + 20]);
         work[idx * n_w + 151] = work[idx * n_w + 160] * work[idx * n_w + 53];
-        work[idx * n_w + 152] = cos(work[idx * n_w + 152]);
+        work[idx * n_w + 152] = cosf(work[idx * n_w + 152]);
         work[idx * n_w + 153] = inputs[0][idx * nnz_in[0] + 85];
-        work[idx * n_w + 156] = sin(work[idx * n_w + 153]);
+        work[idx * n_w + 156] = sinf(work[idx * n_w + 153]);
         work[idx * n_w + 146] = work[idx * n_w + 152] * work[idx * n_w + 156];
-        work[idx * n_w + 20] = cos(work[idx * n_w + 20]);
+        work[idx * n_w + 20] = cosf(work[idx * n_w + 20]);
         work[idx * n_w + 154] = work[idx * n_w + 146] * work[idx * n_w + 20];
         work[idx * n_w + 151] = work[idx * n_w + 151] + work[idx * n_w + 154];
         work[idx * n_w + 154] = inputs[0][idx * nnz_in[0] + 88];
@@ -6280,7 +6280,7 @@ __global__ void evaluate_kernel (
         work[idx * n_w + 163] = work[idx * n_w + 163] + work[idx * n_w + 140];
         work[idx * n_w + 140] = work[idx * n_w + 172] * work[idx * n_w + 163];
         work[idx * n_w + 155] = work[idx * n_w + 155] + work[idx * n_w + 140];
-        work[idx * n_w + 140] = cos(work[idx * n_w + 153]);
+        work[idx * n_w + 140] = cosf(work[idx * n_w + 153]);
         work[idx * n_w + 123] = work[idx * n_w + 140] * work[idx * n_w + 20];
         work[idx * n_w + 137] = work[idx * n_w + 130] * work[idx * n_w + 51];
         work[idx * n_w + 138] = work[idx * n_w + 118] * work[idx * n_w + 90];
@@ -6375,7 +6375,7 @@ __global__ void evaluate_kernel (
         work[idx * n_w + 182] = work[idx * n_w + 182] - work[idx * n_w + 185];
         work[idx * n_w + 182] = -work[idx * n_w + 182];
         outputs[0][idx * nnz_out[0] + 605] = work[idx * n_w + 182];
-        work[idx * n_w + 153] = tan(work[idx * n_w + 153]);
+        work[idx * n_w + 153] = tanf(work[idx * n_w + 153]);
         work[idx * n_w + 182] = work[idx * n_w + 152] * work[idx * n_w + 153];
         work[idx * n_w + 182] = work[idx * n_w + 0] * work[idx * n_w + 182];
         work[idx * n_w + 185] = work[idx * n_w + 182] * work[idx * n_w + 151];
@@ -7127,15 +7127,15 @@ __global__ void evaluate_kernel (
         outputs[0][idx * nnz_out[0] + 685] = work[idx * n_w + 52];
         outputs[0][idx * nnz_out[0] + 686] = work[idx * n_w + 45];
         work[idx * n_w + 167] = inputs[0][idx * nnz_in[0] + 98];
-        work[idx * n_w + 175] = sin(work[idx * n_w + 167]);
+        work[idx * n_w + 175] = sinf(work[idx * n_w + 167]);
         work[idx * n_w + 51] = inputs[0][idx * nnz_in[0] + 96];
-        work[idx * n_w + 90] = sin(work[idx * n_w + 51]);
+        work[idx * n_w + 90] = sinf(work[idx * n_w + 51]);
         work[idx * n_w + 166] = work[idx * n_w + 175] * work[idx * n_w + 90];
-        work[idx * n_w + 167] = cos(work[idx * n_w + 167]);
+        work[idx * n_w + 167] = cosf(work[idx * n_w + 167]);
         work[idx * n_w + 168] = inputs[0][idx * nnz_in[0] + 97];
-        work[idx * n_w + 171] = sin(work[idx * n_w + 168]);
+        work[idx * n_w + 171] = sinf(work[idx * n_w + 168]);
         work[idx * n_w + 161] = work[idx * n_w + 167] * work[idx * n_w + 171];
-        work[idx * n_w + 51] = cos(work[idx * n_w + 51]);
+        work[idx * n_w + 51] = cosf(work[idx * n_w + 51]);
         work[idx * n_w + 169] = work[idx * n_w + 161] * work[idx * n_w + 51];
         work[idx * n_w + 166] = work[idx * n_w + 166] + work[idx * n_w + 169];
         work[idx * n_w + 169] = inputs[0][idx * nnz_in[0] + 100];
@@ -7174,7 +7174,7 @@ __global__ void evaluate_kernel (
         work[idx * n_w + 178] = work[idx * n_w + 178] + work[idx * n_w + 155];
         work[idx * n_w + 155] = work[idx * n_w + 187] * work[idx * n_w + 178];
         work[idx * n_w + 170] = work[idx * n_w + 170] + work[idx * n_w + 155];
-        work[idx * n_w + 155] = cos(work[idx * n_w + 168]);
+        work[idx * n_w + 155] = cosf(work[idx * n_w + 168]);
         work[idx * n_w + 138] = work[idx * n_w + 155] * work[idx * n_w + 51];
         work[idx * n_w + 152] = work[idx * n_w + 145] * work[idx * n_w + 88];
         work[idx * n_w + 153] = work[idx * n_w + 133] * work[idx * n_w + 20];
@@ -7269,7 +7269,7 @@ __global__ void evaluate_kernel (
         work[idx * n_w + 197] = work[idx * n_w + 197] - work[idx * n_w + 200];
         work[idx * n_w + 197] = -work[idx * n_w + 197];
         outputs[0][idx * nnz_out[0] + 693] = work[idx * n_w + 197];
-        work[idx * n_w + 168] = tan(work[idx * n_w + 168]);
+        work[idx * n_w + 168] = tanf(work[idx * n_w + 168]);
         work[idx * n_w + 197] = work[idx * n_w + 167] * work[idx * n_w + 168];
         work[idx * n_w + 197] = work[idx * n_w + 0] * work[idx * n_w + 197];
         work[idx * n_w + 200] = work[idx * n_w + 197] * work[idx * n_w + 166];
@@ -8021,15 +8021,15 @@ __global__ void evaluate_kernel (
         outputs[0][idx * nnz_out[0] + 773] = work[idx * n_w + 52];
         outputs[0][idx * nnz_out[0] + 774] = work[idx * n_w + 45];
         work[idx * n_w + 182] = inputs[0][idx * nnz_in[0] + 110];
-        work[idx * n_w + 190] = sin(work[idx * n_w + 182]);
+        work[idx * n_w + 190] = sinf(work[idx * n_w + 182]);
         work[idx * n_w + 88] = inputs[0][idx * nnz_in[0] + 108];
-        work[idx * n_w + 20] = sin(work[idx * n_w + 88]);
+        work[idx * n_w + 20] = sinf(work[idx * n_w + 88]);
         work[idx * n_w + 181] = work[idx * n_w + 190] * work[idx * n_w + 20];
-        work[idx * n_w + 182] = cos(work[idx * n_w + 182]);
+        work[idx * n_w + 182] = cosf(work[idx * n_w + 182]);
         work[idx * n_w + 183] = inputs[0][idx * nnz_in[0] + 109];
-        work[idx * n_w + 186] = sin(work[idx * n_w + 183]);
+        work[idx * n_w + 186] = sinf(work[idx * n_w + 183]);
         work[idx * n_w + 176] = work[idx * n_w + 182] * work[idx * n_w + 186];
-        work[idx * n_w + 88] = cos(work[idx * n_w + 88]);
+        work[idx * n_w + 88] = cosf(work[idx * n_w + 88]);
         work[idx * n_w + 184] = work[idx * n_w + 176] * work[idx * n_w + 88];
         work[idx * n_w + 181] = work[idx * n_w + 181] + work[idx * n_w + 184];
         work[idx * n_w + 184] = inputs[0][idx * nnz_in[0] + 112];
@@ -8068,7 +8068,7 @@ __global__ void evaluate_kernel (
         work[idx * n_w + 116] = work[idx * n_w + 116] + work[idx * n_w + 51];
         work[idx * n_w + 51] = work[idx * n_w + 200] * work[idx * n_w + 116];
         work[idx * n_w + 129] = work[idx * n_w + 129] + work[idx * n_w + 51];
-        work[idx * n_w + 51] = cos(work[idx * n_w + 183]);
+        work[idx * n_w + 51] = cosf(work[idx * n_w + 183]);
         work[idx * n_w + 123] = work[idx * n_w + 51] * work[idx * n_w + 88];
         work[idx * n_w + 193] = work[idx * n_w + 28] * work[idx * n_w + 166];
         work[idx * n_w + 203] = work[idx * n_w + 10] * work[idx * n_w + 185];
@@ -8163,7 +8163,7 @@ __global__ void evaluate_kernel (
         work[idx * n_w + 138] = work[idx * n_w + 138] - work[idx * n_w + 206];
         work[idx * n_w + 138] = -work[idx * n_w + 138];
         outputs[0][idx * nnz_out[0] + 781] = work[idx * n_w + 138];
-        work[idx * n_w + 183] = tan(work[idx * n_w + 183]);
+        work[idx * n_w + 183] = tanf(work[idx * n_w + 183]);
         work[idx * n_w + 138] = work[idx * n_w + 182] * work[idx * n_w + 183];
         work[idx * n_w + 138] = work[idx * n_w + 0] * work[idx * n_w + 138];
         work[idx * n_w + 206] = work[idx * n_w + 138] * work[idx * n_w + 181];
@@ -11905,8 +11905,8 @@ __global__ void evaluate_kernel (
         outputs[0][idx * nnz_out[0] + 1451] = work[idx * n_w + 0];
     }
 }
-extern "C" {
 
+extern "C" {
     void evaluate(const float *inputs[],
                   float *work,
                   float *outputs[],
@@ -11918,6 +11918,5 @@ extern "C" {
                                                  outputs,
                                                  batch_size);
     }
-
-
 }
+

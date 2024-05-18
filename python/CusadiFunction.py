@@ -68,9 +68,6 @@ class CusADiFunction:
         self._fn_work = self._castAsCPointer(self._work_tensor.data_ptr(), 'float')
         self.inputs_sparse = self._input_tensors
         self.outputs_sparse = self._output_tensors
-        print("INITIAL:")
-        print(self._input_ptrs)
-        print(self._fn_input)
 
     def _prepareInputTensor(self, inputs):
         for i in range(self.fn_casadi.n_in()):

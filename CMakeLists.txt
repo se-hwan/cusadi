@@ -20,21 +20,21 @@ message(${CMAKE_CUDA_ARCHITECTURES})
 # Set C++ standard
 set(CMAKE_CXX_STANDARD 11)
 
-set(CUDA_HEADERS
-    include/cusadi_operations.h
-)
+# set(CUDA_HEADERS
+#     include/cusadi_operations.h
+# )
 
-# Set source files
-set(CUDA_SOURCES
-    src/cuda_operations.cu
-)
+# # Set source files
+# set(CUDA_SOURCES
+#     src/cuda_operations.cu
+# )
+
+# set(C_SOURCES
+#     src/main.c)
 
 set(CUSADI_CODEGEN_SOURCES
-    src/codegen_prototype_orig.cu
+src/codegen_prototype.cu
 )
-
-set(C_SOURCES
-    src/main.c)
 
 # Compile the CUDA file separately
 set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS}; -O3 -arch=sm_86 --use_fast_math)  # Adjust architecture as needed
@@ -44,9 +44,9 @@ set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS}; -O3 -arch=sm_86 --use_fast_math)  # Adju
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
 # Compile the C file separately
-add_library(cuda_libs SHARED ${CUDA_SOURCES})
-add_library(c_libs SHARED ${C_SOURCES})
-target_link_libraries(c_libs cuda_libs)
+# add_library(cuda_libs SHARED ${CUDA_SOURCES})
+# add_library(c_libs SHARED ${C_SOURCES})
+# target_link_libraries(c_libs cuda_libs)
 
 
 add_library(cusadi SHARED ${CUSADI_CODEGEN_SOURCES})

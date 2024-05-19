@@ -1,3 +1,0 @@
-nvcc -o libcuBLAS_example.so --shared cuBLAS_example.c -lcublas --use_fast_math -O3  
-export PATH="/usr/local/cuda-12.3/bin:$PATH"
-export LD_LIBRARY_PATH="/usr/local/cuda-12.3/lib64:$LD_LIBRARY_PATH"

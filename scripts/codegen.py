@@ -1,12 +1,8 @@
-import ctypes
-import torch
-import time
 from casadi import *
-from evaluateCasADiPython import evaluateCasADiPython
+from CusadiOperations import OP_CUDA_DICT
 
-f = casadi.Function.load("../test.casadi")
-
-codegen_file = open(r"../src/codegen_prototype_orig.cu", "w+")
+f = casadi.Function.load("../inertial_quantities.casadi")
+codegen_file = open(r"../codegen/codegen_prototype.cu", "w+")
 codegen_strings = {}
 
 # * Parse CasADi function
@@ -38,9 +34,7 @@ codegen_strings['includes'] = \
 #include <cuda_runtime.h>
 #include <cmath>
 #include <iostream>
-#include "include/cusadi_operations.cuh"
 '''
-
 codegen_strings["nnz_in"] = f"\n__constant__ int nnz_in[] = {{{','.join(map(str, nnz_in))}}};"
 codegen_strings["nnz_out"] = f"\n__constant__ int nnz_out[] = {{{','.join(map(str, nnz_out))}}};"
 codegen_strings["n_w"] = f"\n__constant__ int n_w = {n_w};\n"
@@ -65,34 +59,19 @@ for k in range(INSTR_LIMIT):
     o_idx = output_idx[o_instr]
     i_idx = input_idx[i_instr]
     if op == OP_CONST:
-        str_kernel += f"\n        work[idx * n_w + {o_idx}] = {const_instr[k]};"
+        str_kernel += OP_CUDA_DICT[op] % (o_idx, const_instr[k])
+    elif op == OP_INPUT:
+        str_kernel += OP_CUDA_DICT[op] % (o_idx, i_idx, i_idx, input_idx[i_instr + 1])
+    elif op == OP_OUTPUT:
+        str_kernel += OP_CUDA_DICT[op] % (o_idx, o_idx, output_idx[o_instr + 1], i_idx)
+    elif op == OP_SQ:
+        str_kernel += OP_CUDA_DICT[op] % (o_idx, i_idx, i_idx)
+    elif OP_CUDA_DICT[op].count("%d") == 3:
+        str_kernel += OP_CUDA_DICT[op] % (o_idx, i_idx, input_idx[i_instr + 1])
+    elif OP_CUDA_DICT[op].count("%d") == 2:
+        str_kernel += OP_CUDA_DICT[op] % (o_idx, i_idx)
     else:
-        if op == OP_INPUT:
-            str_kernel += f"\n        work[idx * n_w + {o_idx}] = inputs[{i_idx}][idx * nnz_in[{i_idx}] + {input_idx[i_instr + 1]}];"
-        elif op == OP_OUTPUT:
-            str_kernel += f"\n        outputs[{o_idx}][idx * nnz_out[{o_idx}] + {output_idx[o_instr + 1]}] = work[idx * n_w + {i_idx}];"
-        elif op == OP_ADD:
-            str_kernel += f"\n        work[idx * n_w + {o_idx}] = work[idx * n_w + {i_idx}] + work[idx * n_w + {input_idx[i_instr + 1]}];"
-        elif op == OP_SUB:
-            str_kernel += f"\n        work[idx * n_w + {o_idx}] = work[idx * n_w + {i_idx}] - work[idx * n_w + {input_idx[i_instr + 1]}];"
-        elif op == OP_NEG:
-            str_kernel += f"\n        work[idx * n_w + {o_idx}] = -work[idx * n_w + {i_idx}];"
-        elif op == OP_MUL:
-            str_kernel += f"\n        work[idx * n_w + {o_idx}] = work[idx * n_w + {i_idx}] * work[idx * n_w + {input_idx[i_instr + 1]}];"
-        elif op == OP_DIV:
-            str_kernel += f"\n        work[idx * n_w + {o_idx}] = work[idx * n_w + {i_idx}] / work[idx * n_w + {input_idx[i_instr + 1]}];"
-        elif op == OP_SIN:
-            str_kernel += f"\n        work[idx * n_w + {o_idx}] = sinf(work[idx * n_w + {i_idx}]);"
-        elif op == OP_COS:
-            str_kernel += f"\n        work[idx * n_w + {o_idx}] = cosf(work[idx * n_w + {i_idx}]);"
-        elif op == OP_TAN:
-            str_kernel += f"\n        work[idx * n_w + {o_idx}] = tanf(work[idx * n_w + {i_idx}]);"
-        elif op == OP_SQ:
-            str_kernel += f"\n        work[idx * n_w + {o_idx}] = work[idx * n_w + {i_idx}] * work[idx * n_w + {i_idx}];"
-        elif op == OP_SQRT:
-            str_kernel += f"\n        work[idx * n_w + {o_idx}] = sqrt(work[idx * n_w + {i_idx}]);"
-        else:
-            raise Exception('Unknown CasADi operation: ' + str(op))
+        raise Exception('Unknown CasADi operation: ' + str(op))
     o_instr += output_idx_lengths[k + 1]
     i_instr += input_idx_lengths[k + 1]
 
@@ -101,9 +80,9 @@ str_kernel += "\n}"         # End of kernel
 codegen_strings['cuda_kernel'] = str_kernel
 
 # * Codegen for C interface
-codegen_strings['c_interface'] = '''
-
-extern "C" {
+codegen_strings['c_interface_header'] = """\nextern "C" {\n"""
+codegen_strings['c_evaluation'] = \
+'''
     void evaluate(const float *inputs[],
                   float *work,
                   float *outputs[],
@@ -115,9 +94,34 @@ extern "C" {
                                                  outputs,
                                                  batch_size);
     }
-}
 
 '''
+# codegen_strings['c_getters'] = \
+# '''
+#     int get_n_in() {
+#         return %d;
+#     }
+
+#     int get_n_out() {
+#         return %d;
+#     }
+
+#     int get_nnz_in(int i) {
+#         return nnz_in[i];
+#     }
+
+#     int get_nnz_out(int i) {
+#         return nnz_out[i];
+#     }
+
+#     int get_n_w() {
+#         return n_w;
+#     }
+
+# ''' % (n_in, n_out)
+
+
+codegen_strings['c_interface_closer'] = """\n}"""
 
 # * Write codegen to file
 for cg_str in codegen_strings.values():

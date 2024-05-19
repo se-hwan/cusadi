@@ -33,7 +33,7 @@ set(CMAKE_CXX_STANDARD 11)
 #     src/main.c)
 
 set(CUSADI_CODEGEN_SOURCES
-src/codegen_prototype.cu
+codegen/codegen_prototype.cu
 )
 
 # Compile the CUDA file separately

@@ -1,3 +1,6 @@
+# Codegen files
+codegen/
+
 # Workspace
 .vscode/
 

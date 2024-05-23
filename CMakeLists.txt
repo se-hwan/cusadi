@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.15)
 
 # Set project name
-project(MyProject)
+project(CusADi)
 
 # Find CUDA package
 include(CheckLanguage)

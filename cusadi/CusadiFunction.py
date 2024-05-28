@@ -1,7 +1,11 @@
+import sys, os
+CUSADI_DIR = os.path.dirname(os.path.abspath(__file__))
+CUSADI_ROOT_DIR = os.path.dirname(CUSADI_DIR)
+sys.path.append(CUSADI_ROOT_DIR)
 import torch
 import ctypes
 from casadi import *
-from CusadiOperations import OP_CUDA_DICT
+from cusadi import CUSADI_BUILD_DIR
 
 class CusadiFunction:
     # Public variables:
@@ -26,7 +30,7 @@ class CusadiFunction:
     # Public methods:
     def __init__(self, fn_casadi, num_instances):
         assert torch.cuda.is_available()
-        lib_filepath = 'build/lib' + fn_casadi.name() + '.so'
+        lib_filepath = CUSADI_BUILD_DIR + '/lib' + fn_casadi.name() + '.so'
         self.fn_casadi = fn_casadi
         self.fn_name = fn_casadi.name()
         self.num_instances = num_instances

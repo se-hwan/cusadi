@@ -1,15 +1,17 @@
-import os
-import subprocess
+import sys, os
+SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
+CUSADI_ROOT_DIR = os.path.dirname(SCRIPTS_DIR)
+sys.path.append(CUSADI_ROOT_DIR)
 import textwrap
 from casadi import *
-from CusadiOperations import OP_CUDA_DICT
+from cusadi.CusadiOperations import OP_CUDA_DICT
+from cusadi import CUSADI_FUNCTION_DIR
 
 def main():
     casadi_fns = []
-    fn_directory = "casadi_functions"
-    for filename in os.listdir(fn_directory):
-        f = os.path.join(fn_directory, filename)
-        if os.path.isfile(f):
+    for filename in os.listdir(CUSADI_FUNCTION_DIR):
+        f = os.path.join(CUSADI_FUNCTION_DIR, filename)
+        if os.path.isfile(f) and f.endswith(".casadi"):
             print("CasADi function found: ", f)
             casadi_fns.append(casadi.Function.load(f))
     for f in casadi_fns:

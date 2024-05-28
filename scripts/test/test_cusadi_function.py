@@ -1,12 +1,12 @@
 import sys, os
-current_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.dirname(current_dir))
-
+TEST_DIR = os.path.dirname(os.path.abspath(__file__))
+SCRIPTS_DIR = os.path.dirname(TEST_DIR)
+CUSADI_ROOT_DIR = os.path.dirname(SCRIPTS_DIR)
+sys.path.append(CUSADI_ROOT_DIR)
 import torch
 import numpy
 from casadi import *
-from CusadiFunction import CusadiFunction
-from tempss import CUSADI_BUILD_DIR
+from cusadi.CusadiFunction import CusadiFunction
 
 N_ENVS = 4000
 f = casadi.Function.load("test.casadi")
@@ -16,7 +16,6 @@ print("Function has %d outputs" % f.n_out())
 input_tensors = [torch.rand(N_ENVS, f.nnz_in(i), device='cuda', dtype=torch.float32).contiguous()
                  for i in range(f.n_in())]
 
-libcusadi_path = os.path.join(current_dir, "../../build/libcusadi.so")
 test = CusadiFunction(f, N_ENVS)
 test.evaluate(input_tensors)
 
@@ -26,7 +25,7 @@ for n in range(N_ENVS):
     for i in range(f.n_out()):
         output_numpy[i][n, :] = f.call(inputs_np)[i].nonzeros()
 
-print("CUSASDI AND CASADI EVALUATION COMPARISON:")
+print("CUSADI AND CASADI EVALUATION COMPARISON:")
 for i in range(f.n_out()):
     error_norm = numpy.linalg.norm(test.outputs_sparse[i].cpu().numpy() - output_numpy[i])
     print(f"Output {i} error norm:", error_norm)

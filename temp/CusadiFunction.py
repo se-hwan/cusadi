@@ -1,11 +1,13 @@
 import torch
 import ctypes
 from casadi import *
+from CusadiOperations import OP_CUDA_DICT
 
-class CusADiFunction:
+class CusadiFunction:
     # Public variables:
     fn_casadi = None
-    num_instances = 0;
+    fn_name = None
+    num_instances = 0
     inputs_sparse = []
     outputs_sparse = []
 
@@ -21,11 +23,12 @@ class CusADiFunction:
     _fn_work = []
     _fn_output = []
 
-    # ? How to best load the library? 
     # Public methods:
-    def __init__(self, fn_casadi, num_instances, lib_filepath='../build/libcusadi.so'):
+    def __init__(self, fn_casadi, num_instances):
         assert torch.cuda.is_available()
+        lib_filepath = 'build/lib' + fn_casadi.name() + '.so'
         self.fn_casadi = fn_casadi
+        self.fn_name = fn_casadi.name()
         self.num_instances = num_instances
         self._fn_library = ctypes.CDLL(lib_filepath)
         self._setup()
@@ -89,3 +92,5 @@ class CusADiFunction:
             return ctypes.cast(ptr, ctypes.POINTER(ctypes.c_int))
         elif type == 'float':
             return ctypes.cast(ptr, ctypes.POINTER(ctypes.c_float))
+    
+    

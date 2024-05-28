@@ -5,7 +5,8 @@ sys.path.append(os.path.dirname(current_dir))
 import torch
 import numpy
 from casadi import *
-from CusadiFunction import CusADiFunction
+from CusadiFunction import CusadiFunction
+from tempss import CUSADI_BUILD_DIR
 
 N_ENVS = 4000
 f = casadi.Function.load("test.casadi")
@@ -16,7 +17,7 @@ input_tensors = [torch.rand(N_ENVS, f.nnz_in(i), device='cuda', dtype=torch.floa
                  for i in range(f.n_in())]
 
 libcusadi_path = os.path.join(current_dir, "../../build/libcusadi.so")
-test = CusADiFunction(f, N_ENVS, libcusadi_path)
+test = CusadiFunction(f, N_ENVS)
 test.evaluate(input_tensors)
 
 output_numpy = [numpy.zeros((N_ENVS, f.nnz_out(i))) for i in range(f.n_out())]

@@ -2,12 +2,17 @@ import sys, os
 SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
 CUSADI_ROOT_DIR = os.path.dirname(SCRIPTS_DIR)
 sys.path.append(CUSADI_ROOT_DIR)
+import argparse
 import textwrap
 from casadi import *
 from cusadi.CusadiOperations import OP_CUDA_DICT
 from cusadi import CUSADI_FUNCTION_DIR
 
 def main():
+    parser = argparse.ArgumentParser("CusADi code generation:")
+    parser.add_argument("--debug_mode", 
+                        help="Add GPU error checks to kernel evaluation.")
+    args = parser.parse_args()
     casadi_fns = []
     for filename in os.listdir(CUSADI_FUNCTION_DIR):
         f = os.path.join(CUSADI_FUNCTION_DIR, filename)
@@ -15,13 +20,15 @@ def main():
             print("CasADi function found: ", f)
             casadi_fns.append(casadi.Function.load(f))
     for f in casadi_fns:
-        generateCUDACode(f)
+        generateCUDACode(f, args.debug_mode)
     generateCMakeLists(casadi_fns)
     compileCUDACode()
 
 # Helper functions
-def generateCUDACode(f):
+def generateCUDACode(f, debug_mode=False):
     print("Generating code for CasADi function: ", f.name())
+    if (debug_mode):
+        print("Debug mode enabled. Adding GPU error checks to codegen.")
     codegen_filepath = f"../codegen/{f.name()}.cu"
     codegen_file = open(codegen_filepath, "w+")
     codegen_strings = {}
@@ -53,12 +60,23 @@ def generateCUDACode(f):
     codegen_strings['includes'] = textwrap.dedent(
     '''
     #include <cuda_runtime.h>
-    #include <cmath>
+    #include <math.h>
     #include <iostream>
     ''')
     codegen_strings["nnz_in"] = f"\n__constant__ int nnz_in[] = {{{','.join(map(str, nnz_in))}}};"
     codegen_strings["nnz_out"] = f"\n__constant__ int nnz_out[] = {{{','.join(map(str, nnz_out))}}};"
     codegen_strings["n_w"] = f"\n__constant__ int n_w = {n_w};\n"
+    codegen_strings["error_check"] = textwrap.dedent(
+    r'''
+    #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+    inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true) {
+    if (code != cudaSuccess) {
+        fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+        if (abort) exit(code);
+    }
+    }
+    ''')
+
 
     # * Codegen for CUDA kernel
     str_kernel = textwrap.dedent(
@@ -101,22 +119,26 @@ def generateCUDACode(f):
     codegen_strings['cuda_kernel'] = str_kernel
 
     # * Codegen for C interface
-    codegen_strings['c_interface_header'] = """\nextern "C" {\n\n"""
+    codegen_strings['c_interface_header'] = """\n\nextern "C" {\n"""
     codegen_strings['c_evaluation'] = textwrap.dedent(
     '''
-        void evaluate(const float *inputs[],
-                    float *work,
-                    float *outputs[],
-                    const int batch_size) {
-            int blockSize = 512;
-            int gridSize = (batch_size + blockSize - 1) / blockSize;
-            evaluate_kernel<<<gridSize, blockSize>>>(inputs,
-                                                    work,
-                                                    outputs,
-                                                    batch_size);
-        }
+    void evaluate(const float *inputs[],
+                float *work,
+                float *outputs[],
+                const int batch_size) {
+        int blockSize = 512;
+        int gridSize = (batch_size + blockSize - 1) / blockSize;
+        evaluate_kernel<<<gridSize, blockSize>>>(inputs,
+                                                work,
+                                                outputs,
+                                                batch_size);
     ''')
-    codegen_strings['c_interface_closer'] = """\n}"""
+    if debug_mode:
+        codegen_strings['c_evaluation'] += "\n    gpuErrchk(cudaPeekAtLastError());"
+        codegen_strings['c_evaluation'] += "\n    gpuErrchk(cudaDeviceSynchronize());\n}"
+    else:
+        codegen_strings['c_evaluation'] += "\n}"
+    codegen_strings['c_interface_closer'] = """\n\n}"""
 
     # * Write codegen to file
     for cg_str in codegen_strings.values():

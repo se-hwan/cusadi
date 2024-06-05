@@ -126,7 +126,7 @@ def generateCUDACode(f, debug_mode=False):
                 float *work,
                 float *outputs[],
                 const int batch_size) {
-        int blockSize = 512;
+        int blockSize = 256;
         int gridSize = (batch_size + blockSize - 1) / blockSize;
         evaluate_kernel<<<gridSize, blockSize>>>(inputs,
                                                 work,

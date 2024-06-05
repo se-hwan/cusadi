@@ -8,8 +8,8 @@ import numpy
 from casadi import *
 from cusadi.CusadiFunction import CusadiFunction
 
-N_ENVS = 5
-f = casadi.Function.load("test.casadi")
+N_ENVS = 20000
+f = casadi.Function.load("eigvals.casadi")
 print(f)
 print("Function name: ", f.name())
 print("Function has %d arguments" % f.n_in())
@@ -26,8 +26,9 @@ input_tensors = [torch.rand(N_ENVS, f.nnz_in(i), device='cuda', dtype=torch.floa
 #     print("CUSADI:  ", input_tensors[i])
 
 test = CusadiFunction(f, N_ENVS)
-print("Evaluting...")
+print("Evaluating...")
 test.evaluate(input_tensors)
+print("Evaluation complete")
 
 output_numpy = [numpy.zeros((N_ENVS, f.nnz_out(i))) for i in range(f.n_out())]
 for n in range(N_ENVS):

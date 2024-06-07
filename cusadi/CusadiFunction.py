@@ -5,7 +5,7 @@ sys.path.append(CUSADI_ROOT_DIR)
 import torch
 import ctypes
 from casadi import *
-from cusadi import CUSADI_BUILD_DIR
+from cusadi.cusadi import CUSADI_BUILD_DIR
 
 class CusadiFunction:
     # Public variables:
@@ -40,7 +40,7 @@ class CusadiFunction:
         self._setup()
 
     def evaluate(self, inputs):
-        # self._clearTensors()
+        self._clearTensors()
         self._prepareInputTensor(inputs)
         self._fn_library.evaluate(self._fn_input,
                                   self._fn_work,
@@ -87,8 +87,8 @@ class CusadiFunction:
         self.inputs_sparse = self._input_tensors
 
     def _clearTensors(self):
-        for i in range(self.fn_casadi.n_in()):
-            self._input_tensors[i].zero_()
+        # for i in range(self.fn_casadi.n_in()):
+        #     self._input_tensors[i].zero_()
         for i in range(self.fn_casadi.n_out()):
             self._output_tensors[i].zero_()
         self._work_tensor.zero_()

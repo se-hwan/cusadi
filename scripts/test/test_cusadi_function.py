@@ -2,11 +2,12 @@ import sys, os
 TEST_DIR = os.path.dirname(os.path.abspath(__file__))
 SCRIPTS_DIR = os.path.dirname(TEST_DIR)
 CUSADI_ROOT_DIR = os.path.dirname(SCRIPTS_DIR)
-sys.path.append(CUSADI_ROOT_DIR)
+ISAACGYM_ROOT_DIR = os.path.dirname(CUSADI_ROOT_DIR)
+sys.path.append(ISAACGYM_ROOT_DIR)
 import torch
 import numpy
 from casadi import *
-from cusadi.CusadiFunction import CusadiFunction
+from cusadi.cusadi.CusadiFunction import CusadiFunction
 
 N_ENVS = 20000
 f = casadi.Function.load("eigvals.casadi")

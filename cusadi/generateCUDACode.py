@@ -1,28 +1,13 @@
-import sys, os
-SCRIPTS_DIR = os.path.dirname(os.path.abspath(__file__))
-CUSADI_ROOT_DIR = os.path.dirname(SCRIPTS_DIR)
-sys.path.append(CUSADI_ROOT_DIR)
 import textwrap
 from casadi import *
-from cusadi.CusadiOperations import OP_CUDA_DICT
-from cusadi import CUSADI_FUNCTION_DIR
+from cusadi import *
 
-def main():
-    casadi_fns = []
-    for filename in os.listdir(CUSADI_FUNCTION_DIR):
-        f = os.path.join(CUSADI_FUNCTION_DIR, filename)
-        if os.path.isfile(f) and f.endswith(".casadi"):
-            print("CasADi function found: ", f)
-            casadi_fns.append(casadi.Function.load(f))
-    for f in casadi_fns:
-        generateCUDACode(f)
-    generateCMakeLists(casadi_fns)
-    compileCUDACode()
-
-# Helper functions
-def generateCUDACode(f):
-    print("Generating code for CasADi function: ", f.name())
-    codegen_filepath = f"../codegen/{f.name()}.cu"
+def generateCUDACode(f, filepath=None):
+    print("Generating CUDA code for CasADi function: ", f.name())
+    if filepath is None:
+        codegen_filepath = os.path.join(CUSADI_ROOT_DIR, "codegen", f"{f.name()}.cu")
+    else:
+        codegen_filepath = filepath
     codegen_file = open(codegen_filepath, "w+")
     codegen_strings = {}
 
@@ -108,7 +93,7 @@ def generateCUDACode(f):
                     float *work,
                     float *outputs[],
                     const int batch_size) {
-            int blockSize = 512;
+            int blockSize = 256;
             int gridSize = (batch_size + blockSize - 1) / blockSize;
             evaluate_kernel<<<gridSize, blockSize>>>(inputs,
                                                     work,
@@ -121,12 +106,12 @@ def generateCUDACode(f):
     # * Write codegen to file
     for cg_str in codegen_strings.values():
         codegen_file.write(cg_str)
-
     codegen_file.close()
-    print("Codegen complete for CasADi function: ", f.name())
+    print("CUDA codegen complete for CasADi function: ", f.name())
+
 
 def generateCMakeLists(casadi_fns):
-    cmake_filepath = "../CMakeLists.txt"
+    cmake_filepath = os.path.join(CUSADI_ROOT_DIR, "CMakeLists.txt")
     cmake_file = open(cmake_filepath, "w+")
     cmake_strings = {}
 
@@ -181,18 +166,3 @@ def generateCMakeLists(casadi_fns):
     # * Write codegen to file
     for cmake_str in cmake_strings.values():
         cmake_file.write(cmake_str)
-
-def compileCUDACode():
-    print("Compiling CUDA code...")
-    status = os.system("cd ../build && cmake .. && make -j")
-    if status == 0:
-        print("Compilation complete.")
-    else:
-        print("Compilation failed.")
-        exit(1)
-        
-
-
-
-if __name__ == "__main__":
-    main()

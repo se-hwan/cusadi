@@ -38,12 +38,23 @@ def generateCUDACode(f, filepath=None):
     codegen_strings['includes'] = textwrap.dedent(
     '''
     #include <cuda_runtime.h>
-    #include <cmath>
+    #include <math.h>
     #include <iostream>
     ''')
     codegen_strings["nnz_in"] = f"\n__constant__ int nnz_in[] = {{{','.join(map(str, nnz_in))}}};"
     codegen_strings["nnz_out"] = f"\n__constant__ int nnz_out[] = {{{','.join(map(str, nnz_out))}}};"
     codegen_strings["n_w"] = f"\n__constant__ int n_w = {n_w};\n"
+    codegen_strings["error_check"] = textwrap.dedent(
+    r'''
+    #define gpuErrchk(ans) { gpuAssert((ans), __FILE__, __LINE__); }
+    inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=true) {
+    if (code != cudaSuccess) {
+        fprintf(stderr,"GPUassert: %s %s %d\n", cudaGetErrorString(code), file, line);
+        if (abort) exit(code);
+    }
+    }
+    ''')
+
 
     # * Codegen for CUDA kernel
     str_kernel = textwrap.dedent(
@@ -86,7 +97,7 @@ def generateCUDACode(f, filepath=None):
     codegen_strings['cuda_kernel'] = str_kernel
 
     # * Codegen for C interface
-    codegen_strings['c_interface_header'] = """\nextern "C" {\n\n"""
+    codegen_strings['c_interface_header'] = """\n\nextern "C" {\n"""
     codegen_strings['c_evaluation'] = textwrap.dedent(
     '''
         void evaluate(const float *inputs[],
@@ -101,7 +112,12 @@ def generateCUDACode(f, filepath=None):
                                                     batch_size);
         }
     ''')
-    codegen_strings['c_interface_closer'] = """\n}"""
+    if debug_mode:
+        codegen_strings['c_evaluation'] += "\n    gpuErrchk(cudaPeekAtLastError());"
+        codegen_strings['c_evaluation'] += "\n    gpuErrchk(cudaDeviceSynchronize());\n}"
+    else:
+        codegen_strings['c_evaluation'] += "\n}"
+    codegen_strings['c_interface_closer'] = """\n\n}"""
 
     # * Write codegen to file
     for cg_str in codegen_strings.values():

@@ -54,7 +54,7 @@ OP_CUDA_DICT = {
     OP_ACOSH:               "\n        work[idx * n_w + %d] = acosh(work[idx * n_w + %d]);",
     OP_ATANH:               "\n        work[idx * n_w + %d] = atanh(work[idx * n_w + %d]);",
     OP_ATAN2:               "\n        work[idx * n_w + %d] = atan2(work[idx * n_w + %d], work[idx * n_w + %d]);",
-    OP_CONST:               "\n        work[idx * n_w + %d] = %f;",
+    OP_CONST:               "\n        work[idx * n_w + %d] = %.16f;",
     OP_INPUT:               "\n        work[idx * n_w + %d] = inputs[%d][idx * nnz_in[%d] + %d];",
     OP_OUTPUT:              "\n        outputs[%d][idx * nnz_out[%d] + %d] = work[idx * n_w + %d];",
 }

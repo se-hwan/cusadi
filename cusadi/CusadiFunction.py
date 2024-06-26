@@ -1,7 +1,7 @@
 import torch
 import ctypes
 from casadi import *
-from cusadi import CUSADI_BUILD_DIR
+from cusadi.cusadi import CUSADI_BUILD_DIR
 
 class CusadiFunction:
     # Public variables:
@@ -23,7 +23,7 @@ class CusadiFunction:
     _fn_work = []
     _fn_output = []
 
-    # Public methods:
+    # ! Public methods:
     def __init__(self, fn_casadi, num_instances):
         assert torch.cuda.is_available()
         lib_filepath = os.path.join(CUSADI_BUILD_DIR, f"lib{fn_casadi.name()}.so")
@@ -31,6 +31,8 @@ class CusadiFunction:
         self.fn_name = fn_casadi.name()
         self.num_instances = num_instances
         self._fn_library = ctypes.CDLL(lib_filepath)
+        print("Loaded CasADi function: ", self.fn_casadi)
+        print("Loaded library: ", self._fn_library)
         self._setup()
 
     def evaluate(self, inputs):
@@ -50,9 +52,9 @@ class CusadiFunction:
                       for i in out_idx]
         return out_sparse.to_dense()
     
-    # Private methods:
+    # ! Private methods:
     def _setup(self):
-        self._input_tensors = [torch.ones((self.num_instances, self.fn_casadi.nnz_in(i)),
+        self._input_tensors = [torch.zeros((self.num_instances, self.fn_casadi.nnz_in(i)),
                                device=self._device, dtype=torch.float32).contiguous()
                                for i in range(self.fn_casadi.n_in())]
         self._output_tensors = [torch.zeros(self.num_instances, self.fn_casadi.nnz_out(i),
@@ -81,8 +83,8 @@ class CusadiFunction:
         self.inputs_sparse = self._input_tensors
 
     def _clearTensors(self):
-        for i in range(self.fn_casadi.n_in()):
-            self._input_tensors[i].zero_()
+        # for i in range(self.fn_casadi.n_in()):
+        #     self._input_tensors[i].zero_()
         for i in range(self.fn_casadi.n_out()):
             self._output_tensors[i].zero_()
         self._work_tensor.zero_()

@@ -1,7 +1,3 @@
-import sys, os
-CUSADI_DIR = os.path.dirname(os.path.abspath(__file__))
-CUSADI_ROOT_DIR = os.path.dirname(CUSADI_DIR)
-sys.path.append(CUSADI_ROOT_DIR)
 import torch
 import ctypes
 from casadi import *
@@ -30,7 +26,7 @@ class CusadiFunction:
     # Public methods:
     def __init__(self, fn_casadi, num_instances):
         assert torch.cuda.is_available()
-        lib_filepath = CUSADI_BUILD_DIR + '/lib' + fn_casadi.name() + '.so'
+        lib_filepath = os.path.join(CUSADI_BUILD_DIR, f"lib{fn_casadi.name()}.so")
         self.fn_casadi = fn_casadi
         self.fn_name = fn_casadi.name()
         self.num_instances = num_instances
@@ -44,7 +40,7 @@ class CusadiFunction:
                                   self._fn_work,
                                   self._fn_output,
                                   self.num_instances)
-        torch.cuda.synchronize()
+        # torch.cuda.synchronize()
 
     def getDenseOutputsForEnv(self, env_idx, out_idx = None):
         if out_idx is None:
@@ -96,5 +92,3 @@ class CusadiFunction:
             return ctypes.cast(ptr, ctypes.POINTER(ctypes.c_int))
         elif type == 'float':
             return ctypes.cast(ptr, ctypes.POINTER(ctypes.c_float))
-    
-    

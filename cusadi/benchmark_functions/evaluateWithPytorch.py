@@ -1,17 +1,10 @@
-
 import torch
 from casadi import *
 
-def evaluateCasADiPython(output,
-                         work_tensor,
-                         input_batch,
-                         operations,
-                         output_idx,
-                         input_idx,
-                         const_instr,
-                         num_instructions):
+def evaluateWithPytorch(output, work_tensor, input_batch,
+                        operations, output_idx, input_idx, const_instr,
+                        num_instructions):
     for k in range(num_instructions):
-        # Get the atomic operation
         op = operations[k]
         o = output_idx[k]
         i = input_idx[k]

@@ -1,7 +1,7 @@
 import torch
 import ctypes
 from casadi import *
-from cusadi.cusadi import CUSADI_BUILD_DIR
+from cusadi import CUSADI_BUILD_DIR
 
 class CusadiFunction:
     # Public variables:

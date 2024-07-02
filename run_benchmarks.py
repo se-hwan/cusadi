@@ -104,14 +104,14 @@ def main():
             fn_CPU_parallel = casadi.external(f"{fn.name()}_mapped_{N_ENVS}",
                                               f"{CUSADI_BENCHMARK_DIR}/{fn.name()}_mapped_{N_ENVS}.so")
             for j in range(N_EVALS):
-                # _, time["cusadi"][i, j] = timeFunction(lambda:
-                #     runCusadiBenchmark(fn_cusadi, inputs_GPU))
+                _, time["cusadi"][i, j] = timeFunction(lambda:
+                    runCusadiBenchmark(fn_cusadi, inputs_GPU))
                 _, time["pytorch"][i, j] = timeFunction(lambda: 
                     runPytorchBenchmark(fn, outputs_GPU, inputs_GPU, work_GPU))
-                # _, time["serial_cpu"][i, j] = timeFunction(lambda:
-                #     runSerialCPUBenchmark(fn_CPU, inputs_CPU))
-                # _, time["parallel_cpu"][i, j] = timeFunction(lambda:
-                #     runParallelCPUBenchmark(fn_CPU_parallel, inputs_CPU))
+                _, time["serial_cpu"][i, j] = timeFunction(lambda:
+                    runSerialCPUBenchmark(fn_CPU, inputs_CPU))
+                _, time["parallel_cpu"][i, j] = timeFunction(lambda:
+                    runParallelCPUBenchmark(fn_CPU_parallel, inputs_CPU))
     data_MATLAB = {}
     for i in range(len(benchmark_sizes)):
         data_MATLAB[benchmark_sizes[i]] = t_data[i]

@@ -1,4 +1,5 @@
 import os
+import time
 import argparse
 from casadi import *
 from cusadi import *
@@ -17,7 +18,10 @@ def main(args):
         if args.gen_pytorch:
             generatePytorchCode(f)
     generateCMakeLists(casadi_fns)
+    t_compile = time.time()
     compileCUDACode()
+    t_compile = time.time() - t_compile
+    print(f"Compilation time: {t_compile:.2f} seconds")
 
 # Helper functions
 def compileCUDACode():

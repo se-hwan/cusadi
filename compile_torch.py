@@ -3,8 +3,8 @@ import argparse
 import torch
 import numpy as np
 from casadi import *
-from cusadi import *
-from cusadi.benchmark_functions import *
+from src import *
+from src.benchmark_functions import *
 
 N_ENVS = 4000
 N_ITERS = 20

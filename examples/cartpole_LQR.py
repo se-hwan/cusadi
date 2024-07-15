@@ -5,7 +5,7 @@ EXAMPLES_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(EXAMPLES_DIR)
 sys.path.append(ROOT_DIR)
 
-from cusadi import *
+from src import *
 import numpy as np
 
 N_ENVS = 4000

@@ -3,7 +3,7 @@ import torch
 import numpy as np
 import scipy
 from casadi import *
-from cusadi import *
+from src import *
 
 # fn_1e6 (function with million instructions) is available in CUSADI_BENCHMARK_DIR, but not included in benchmark
 # Compilation can take hours, both for .c and parallelized CUDA .cu file

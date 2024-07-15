@@ -1,6 +1,6 @@
 import textwrap
 from casadi import *
-from cusadi import *
+from src import *
 
 def generatePytorchCode(f, filepath=None):
     print("Generating Pytorch code for CasADi function: ", f.name())

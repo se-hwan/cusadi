@@ -1,6 +1,6 @@
 import textwrap
 from casadi import *
-from cusadi import *
+from src import *
 
 def generateCUDACode(f, filepath=None, benchmarking=True, debug_mode=True):
     print("Generating CUDA code for CasADi function: ", f.name())

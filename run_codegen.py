@@ -2,7 +2,7 @@ import os
 import time
 import argparse
 from casadi import *
-from cusadi import *
+from src import *
 
 def main(args):
     casadi_fns = []

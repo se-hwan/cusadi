@@ -5,11 +5,6 @@ import scipy
 from casadi import *
 from src import *
 
-# fn_1e6 (function with million instructions) is available in CUSADI_BENCHMARK_DIR, but not included in benchmark
-# Compilation can take hours, both for .c and parallelized CUDA .cu file
-# Change the EVALUATE_1E6 flag to True to include fn_1e6 in the benchmark
-
-EVALUATE_1E6 = False
 REBUILD_CUDA_CODEGEN = False
 N_ENVS_SWEEP = [1, 5, 10, 50, 100, 250, 500, 1000, 5000, 10000]
 N_EVALS = 20
@@ -20,14 +15,12 @@ fn_filepath_1e2 = os.path.join(CUSADI_BENCHMARK_DIR, "fn_1e2.casadi")
 fn_filepath_1e3 = os.path.join(CUSADI_BENCHMARK_DIR, "fn_1e3.casadi")
 fn_filepath_1e4 = os.path.join(CUSADI_BENCHMARK_DIR, "fn_1e4.casadi")
 fn_filepath_1e5 = os.path.join(CUSADI_BENCHMARK_DIR, "fn_1e5.casadi")
-fn_filepath_1e6 = os.path.join(CUSADI_BENCHMARK_DIR, "fn_1e6.casadi")
 fn_1e1 = casadi.Function.load(fn_filepath_1e1)
 fn_1e2 = casadi.Function.load(fn_filepath_1e2)
 fn_1e3 = casadi.Function.load(fn_filepath_1e3)
 fn_1e4 = casadi.Function.load(fn_filepath_1e4)
 fn_1e5 = casadi.Function.load(fn_filepath_1e5)
-fn_1e6 = casadi.Function.load(fn_filepath_1e6)
-benchmark_casadi_fns = [fn_1e1, fn_1e2, fn_1e3, fn_1e4, fn_1e5, fn_1e6]
+benchmark_casadi_fns = [fn_1e1, fn_1e2, fn_1e3, fn_1e4, fn_1e5]
 N_INSTRUCTIONS = []
 
 for f in benchmark_casadi_fns:
@@ -69,9 +62,9 @@ if (REBUILD_CUDA_CODEGEN):
     generateCMakeLists(benchmark_casadi_fns)
     os.system(f"cd {CUSADI_BUILD_DIR} && cmake .. && make -j")
 
-t_1e1 = {}; t_1e2 = {}; t_1e3 = {}; t_1e4 = {}; t_1e5 = {}; t_1e6 = {}
+t_1e1 = {}; t_1e2 = {}; t_1e3 = {}; t_1e4 = {}; t_1e5 = {};
 time_zero_array = np.zeros((len(N_ENVS_SWEEP), N_EVALS))
-benchmark_sizes = ["n_1e1", "n_1e2", "n_1e3", "n_1e4", "n_1e5", "n_1e6"]
+benchmark_sizes = ["n_1e1", "n_1e2", "n_1e3", "n_1e4", "n_1e5"]
 method_names = ["cusadi", "pytorch", "serial_cpu", "parallel_cpu"]
 for method in method_names:
     t_1e1[method] = time_zero_array.copy()
@@ -79,11 +72,8 @@ for method in method_names:
     t_1e3[method] = time_zero_array.copy()
     t_1e4[method] = time_zero_array.copy()
     t_1e5[method] = time_zero_array.copy()
-    t_1e6[method] = time_zero_array.copy()
-t_data = [t_1e1, t_1e2, t_1e3, t_1e4, t_1e5, t_1e6]
+t_data = [t_1e1, t_1e2, t_1e3, t_1e4, t_1e5]
 benchmark_data = dict(zip(benchmark_casadi_fns, t_data))
-if not EVALUATE_1E6:
-    benchmark_data.pop(fn_1e6)
 
 def main():
     sys.setrecursionlimit(10000)

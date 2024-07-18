@@ -21,10 +21,10 @@ set(CMAKE_CXX_STANDARD 11)
 # Set CUDA flags
 set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS}; -O3 -arch=sm_86 --use_fast_math)  # Adjust architecture as needed
 
-set(QUADRATIC_PENALTY_SOLUTION_SOURCE codegen/Quadratic_penalty_solution.cu)
+set(DRONE_SIM_LQR_SWEEP_SOURCE codegen/drone_sim_LQR_sweep.cu)
 
 # Include directories for your header files
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
-add_library(Quadratic_penalty_solution SHARED ${QUADRATIC_PENALTY_SOLUTION_SOURCE})
-target_link_libraries(Quadratic_penalty_solution)
+add_library(drone_sim_LQR_sweep SHARED ${DRONE_SIM_LQR_SWEEP_SOURCE})
+target_link_libraries(drone_sim_LQR_sweep)

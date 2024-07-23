@@ -49,5 +49,5 @@ qw{4} = plot(nan, 'o', 'MarkerFaceColor', colors(4, :), 'MarkerEdgeColor', 'k');
 qw{5} = plot(nan, 'o', 'MarkerFaceColor', colors(5, :), 'MarkerEdgeColor', 'k');
 legend([qw{:}], "50 N", "40 N", "30 N", "20 N", "10 N", 'Location', 'NorthEast');
 
-xlabel('Linear momentum (kg m/s)');
-ylabel('Angular momentum (kg m^2/s)');
+xlabel('Initial linear momentum (kg m/s)');
+ylabel('Initial angular momentum (kg m^2/s)');

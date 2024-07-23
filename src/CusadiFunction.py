@@ -54,14 +54,22 @@ class CusadiFunction:
     
     # ! Private methods:
     def _setup(self):
+        # self._input_tensors = [torch.zeros((self.num_instances, self.fn_casadi.nnz_in(i)),
+        #                        device=self._device, dtype=torch.float32).contiguous()
+        #                        for i in range(self.fn_casadi.n_in())]
+        # self._output_tensors = [torch.zeros(self.num_instances, self.fn_casadi.nnz_out(i),
+        #                         device=self._device, dtype=torch.float32).contiguous()
+        #                         for i in range(self.fn_casadi.n_out())]
+        # self._work_tensor = torch.zeros((self.num_instances, self.fn_casadi.sz_w()),
+        #                                 device=self._device, dtype=torch.float32).contiguous()
         self._input_tensors = [torch.zeros((self.num_instances, self.fn_casadi.nnz_in(i)),
-                               device=self._device, dtype=torch.float32).contiguous()
+                               device=self._device, dtype=torch.double).contiguous()
                                for i in range(self.fn_casadi.n_in())]
         self._output_tensors = [torch.zeros(self.num_instances, self.fn_casadi.nnz_out(i),
-                                device=self._device, dtype=torch.float32).contiguous()
+                                device=self._device, dtype=torch.double).contiguous()
                                 for i in range(self.fn_casadi.n_out())]
         self._work_tensor = torch.zeros((self.num_instances, self.fn_casadi.sz_w()),
-                                        device=self._device, dtype=torch.float32).contiguous()
+                                        device=self._device, dtype=torch.double).contiguous()
         self._input_ptrs = torch.zeros(self.fn_casadi.n_in(), device='cuda', dtype=torch.int64).contiguous()
         self._output_ptrs = torch.zeros(self.fn_casadi.n_out(), device='cuda', dtype=torch.int64).contiguous()
         for i in range(self.fn_casadi.n_in()):
@@ -70,7 +78,8 @@ class CusadiFunction:
             self._output_ptrs[i] = self._output_tensors[i].data_ptr()
         self._fn_input = self._castAsCPointer(self._input_ptrs.data_ptr(), 'int')
         self._fn_output = self._castAsCPointer(self._output_ptrs.data_ptr(), 'int')
-        self._fn_work = self._castAsCPointer(self._work_tensor.data_ptr(), 'float')
+        # self._fn_work = self._castAsCPointer(self._work_tensor.data_ptr(), 'float')
+        self._fn_work = self._castAsCPointer(self._work_tensor.data_ptr(), 'double')
         self.inputs_sparse = self._input_tensors
         self.outputs_sparse = self._output_tensors
 
@@ -94,3 +103,5 @@ class CusadiFunction:
             return ctypes.cast(ptr, ctypes.POINTER(ctypes.c_int))
         elif type == 'float':
             return ctypes.cast(ptr, ctypes.POINTER(ctypes.c_float))
+        elif type == 'double':
+            return ctypes.cast(ptr, ctypes.POINTER(ctypes.c_double))

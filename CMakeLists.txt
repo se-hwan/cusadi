@@ -21,10 +21,10 @@ set(CMAKE_CXX_STANDARD 11)
 # Set CUDA flags
 set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS}; -O3 -arch=sm_86 --use_fast_math)  # Adjust architecture as needed
 
-set(DRONE_SIM_LQR_SWEEP_SOURCE codegen/drone_sim_LQR_sweep.cu)
+set(SWINGCONTROL_FUN_SOURCE codegen/swingControl_fun.cu)
 
 # Include directories for your header files
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
-add_library(drone_sim_LQR_sweep SHARED ${DRONE_SIM_LQR_SWEEP_SOURCE})
-target_link_libraries(drone_sim_LQR_sweep)
+add_library(swingControl_fun SHARED ${SWINGCONTROL_FUN_SOURCE})
+target_link_libraries(swingControl_fun)

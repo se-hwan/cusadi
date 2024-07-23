@@ -12,7 +12,7 @@ def main(args):
     print("Function has %d arguments" % f.n_in())
     print("Function has %d outputs" % f.n_out())
 
-    input_tensors = [torch.rand(args.n_envs, f.nnz_in(i), device='cuda', dtype=torch.float32).contiguous()
+    input_tensors = [torch.rand(args.n_envs, f.nnz_in(i), device='cuda', dtype=torch.double).contiguous()
                      for i in range(f.n_in())]
 
     fn_cusadi = CusadiFunction(f, args.n_envs)

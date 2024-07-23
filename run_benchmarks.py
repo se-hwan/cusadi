@@ -5,7 +5,7 @@ import scipy
 from casadi import *
 from src import *
 
-REBUILD_CUDA_CODEGEN = False
+REBUILD_CUDA_CODEGEN = True
 N_ENVS_SWEEP = [1, 5, 10, 50, 100, 250, 500, 1000, 5000, 10000]
 N_EVALS = 20
 
@@ -29,7 +29,7 @@ for f in benchmark_casadi_fns:
 
     # Generate Cusadi functions for benchmarking
     if (not os.path.isfile(f"{CUSADI_CODEGEN_DIR}/{f.name()}.cu")):
-        generateCUDACode(f)
+        generateCUDACodeDouble(f)
 
     # Generate Pytorch functions for benchmarking
     if (not os.path.isfile(f"{CUSADI_BENCHMARK_DIR}/{f.name()}_PT.py")):
@@ -83,12 +83,12 @@ def main():
             print("Running benchmarks for ", N_ENVS_SWEEP[i], " environments...")
             N_ENVS = N_ENVS_SWEEP[i]
             inputs_GPU = [torch.rand(N_ENVS, fn.nnz_in(i), device='cuda',
-                          dtype=torch.float32).contiguous() for i in range(fn.n_in())]
+                          dtype=torch.double).contiguous() for i in range(fn.n_in())]
             inputs_CPU = [torch.transpose(inputs_GPU[i], 0, 1).cpu().detach().numpy()
                           for i in range(fn.n_in())]
             outputs_GPU = [torch.zeros(N_ENVS, fn.nnz_out(i), device='cuda',
-                           dtype=torch.float32).contiguous() for i in range(fn.n_out())]
-            work_GPU = torch.zeros(N_ENVS, fn.sz_w(), device='cuda', dtype=torch.float32).contiguous()
+                           dtype=torch.double).contiguous() for i in range(fn.n_out())]
+            work_GPU = torch.zeros(N_ENVS, fn.sz_w(), device='cuda', dtype=torch.double).contiguous()
             fn_cusadi = CusadiFunction(fn, N_ENVS)
             fn_CPU = casadi.external(fn.name(), f"{CUSADI_BENCHMARK_DIR}/{fn.name()}.so")
             fn_CPU_parallel = casadi.external(f"{fn.name()}_mapped_{N_ENVS}",

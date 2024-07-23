@@ -8,13 +8,20 @@ def main(args):
     casadi_fns = []
     fn_dir = CUSADI_BENCHMARK_DIR if args.codegen_benchmark_fns else CUSADI_FUNCTION_DIR
     for filename in os.listdir(fn_dir):
-        f = os.path.join(CUSADI_FUNCTION_DIR, filename)
+        f = os.path.join(fn_dir, filename)
         if os.path.isfile(f) and f.endswith(".casadi"):
             if args.fn_name == "all" or args.fn_name in f:
                 print("CasADi function found: ", f)
                 casadi_fns.append(casadi.Function.load(f))
     for f in casadi_fns:
-        generateCUDACode(f)
+        if args.precision:
+            print("Generating double code")
+            generateCUDACodeDouble(f)
+        else:
+            print("Generating float code")
+            generateCUDACodeFloat(f)
+        # generateCUDACodeFloat(f)
+        # generateCUDACodeDouble(f)
         if args.gen_pytorch:
             generatePytorchCode(f)
     generateCMakeLists(casadi_fns)
@@ -51,6 +58,8 @@ def setupParser():
     parser = argparse.ArgumentParser(description='Script to generate parallelized code from CasADi functions')
     parser.add_argument('--fn', type=str, dest='fn_name', default='all',
                         help='Function to parallelize in cusadi/casadi_functions, defaults to "all"')
+    parser.add_argument('--precision', type=bool, dest='precision', default=True,
+                        help='Precision of generated fn. True: double, False: float. Defaults to double')
     parser.add_argument('--gen_CUDA', type=bool, dest='gen_CUDA', default=True,
                         help='Generate CUDA codegen. Defaults to True')
     parser.add_argument('--gen_pytorch', type=bool, dest='gen_pytorch', default=False,

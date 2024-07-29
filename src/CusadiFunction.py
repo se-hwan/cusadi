@@ -10,6 +10,7 @@ class CusadiFunction:
     num_instances = 0
     inputs_sparse = []
     outputs_sparse = []
+    outputs_dense = []
 
     # Private variables:
     _device = 'cuda'
@@ -44,30 +45,39 @@ class CusadiFunction:
                                   self.num_instances)
         # torch.cuda.synchronize()
 
-    def getDenseOutputsForEnv(self, env_idx, out_idx = None):
-        if out_idx is None:
-            out_idx = range(self.fn_casadi.n_out())
-        out_sparse = [torch.sparse_coo_tensor(self.fn_casasdi.sparsity_out(i).get_triplet(),
-                                              self._output_tensors[i][env_idx, :]) 
-                      for i in out_idx]
-        return out_sparse.to_dense()
+    def getDenseOutput(self, out_idx = None):
+        env_idx = torch.tensor(range(self.num_instances), device=self._device).repeat_interleave(self.fn_casadi.nnz_out(out_idx))
+        row_idx = torch.tensor((self.fn_casadi.sparsity_out(out_idx).get_triplet()[0]), device=self._device) \
+            .repeat(self.num_instances)
+        col_idx = torch.tensor((self.fn_casadi.sparsity_out(out_idx).get_triplet()[1]), device=self._device) \
+            .repeat(self.num_instances)
+        dim_dense = (self.num_instances, self.fn_casadi.size1_out(out_idx), self.fn_casadi.size2_out(out_idx))
+        return torch.sparse_coo_tensor(torch.vstack((env_idx, row_idx, col_idx)),
+                                       self.outputs_sparse[out_idx].reshape(-1), 
+                                       dim_dense).to_dense()
     
+    def checkInputDimensions(self, inputs):
+        self.input_CPU = [tensor[0, :].cpu().numpy() for tensor in inputs]
+        try :
+            out = (self.fn_casadi.call(self.input_CPU)[0]).full()
+            print("CPU call successful. Tensor dimensions are correct for inputs.")
+        except:
+            print("Error in Casadi function call. Exiting...")
+            sys.exit(1)
+
     # ! Private methods:
     def _setup(self):
-        # self._input_tensors = [torch.zeros((self.num_instances, self.fn_casadi.nnz_in(i)),
-        #                        device=self._device, dtype=torch.float32).contiguous()
-        #                        for i in range(self.fn_casadi.n_in())]
-        # self._output_tensors = [torch.zeros(self.num_instances, self.fn_casadi.nnz_out(i),
-        #                         device=self._device, dtype=torch.float32).contiguous()
-        #                         for i in range(self.fn_casadi.n_out())]
-        # self._work_tensor = torch.zeros((self.num_instances, self.fn_casadi.sz_w()),
-        #                                 device=self._device, dtype=torch.float32).contiguous()
         self._input_tensors = [torch.zeros((self.num_instances, self.fn_casadi.nnz_in(i)),
-                               device=self._device, dtype=torch.double).contiguous()
+                                            device=self._device, dtype=torch.double).contiguous()
                                for i in range(self.fn_casadi.n_in())]
         self._output_tensors = [torch.zeros(self.num_instances, self.fn_casadi.nnz_out(i),
-                                device=self._device, dtype=torch.double).contiguous()
+                                            device=self._device, dtype=torch.double).contiguous()
                                 for i in range(self.fn_casadi.n_out())]
+        self._output_tensors_dense = [torch.zeros((self.num_instances,
+                                                   self.fn_casadi.size1_out(i),
+                                                   self.fn_casadi.size2_out(i)),
+                                      device=self._device, dtype=torch.double).contiguous()
+                                      for i in range(self.fn_casadi.n_out())]
         self._work_tensor = torch.zeros((self.num_instances, self.fn_casadi.sz_w()),
                                         device=self._device, dtype=torch.double).contiguous()
         self._input_ptrs = torch.zeros(self.fn_casadi.n_in(), device='cuda', dtype=torch.int64).contiguous()
@@ -78,10 +88,10 @@ class CusadiFunction:
             self._output_ptrs[i] = self._output_tensors[i].data_ptr()
         self._fn_input = self._castAsCPointer(self._input_ptrs.data_ptr(), 'int')
         self._fn_output = self._castAsCPointer(self._output_ptrs.data_ptr(), 'int')
-        # self._fn_work = self._castAsCPointer(self._work_tensor.data_ptr(), 'float')
         self._fn_work = self._castAsCPointer(self._work_tensor.data_ptr(), 'double')
         self.inputs_sparse = self._input_tensors
         self.outputs_sparse = self._output_tensors
+        self.outputs_dense = self._output_tensors_dense
 
     def _prepareInputTensor(self, inputs):
         for i in range(self.fn_casadi.n_in()):

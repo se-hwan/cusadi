@@ -45,9 +45,9 @@ u_0_cusadi = torch.tensor(u_0, device='cuda', dtype=torch.double).repeat(N_ENVS,
 mu_0 = [100]
 mu_0_cusadi = torch.tensor(mu_0, device='cuda', dtype=torch.double).repeat(N_ENVS, 1)
 
-x_0 = [1,0,0,0,1,0,0,0,1, 0,0,0.6, 0,0,0, 0,0,0]
-x_des = [1, 0, 0, 0, 1, 0, 0, 0, 1, -0.0047, 0, 0.6, 0, 0, 0, 1, 0, 0]
-p_f = [0.0125772, -0.0801625, -0.146271, 0.0125772, 0.0801625, -0.146271]
+x_0 = [1,0,0,0,1,0,0,0,1, 3,0,0.6, 0,0,0, 0,0,0]
+x_des = [1, 0, 0, 0, 1, 0, 0, 0, 1, 3.0047, 0, 0.6, 0, 0, 0, 1, 0, 0]
+p_f = [3.0125772, -0.0801625, -0.146271, 3.0125772, 0.0801625, -0.146271]
 contact_prediction = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1]
 p_foot_frame = [0, 0, 0, 0, 0, 0]
 R_foot_yaw = [0, 0]
@@ -67,7 +67,7 @@ fn_inputs_cusadi = [u_0_cusadi, mu_0_cusadi, param_dyn_cusadi, param_fixed_cusad
 
 
 # Function loading and evaluation
-fn_filepath = os.path.join(CUSADI_FUNCTION_DIR, "CASADI_srb_nmpc_codegen_iter5.casadi")
+fn_filepath = os.path.join(CUSADI_FUNCTION_DIR, "SRBM_MPC_5.casadi")
 # fn_filepath = os.path.join(CUSADI_FUNCTION_DIR, "test_conditional.casadi")
 f = casadi.Function.load(fn_filepath)
 print("Evaluating function:", f.name())

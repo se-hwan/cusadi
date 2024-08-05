@@ -5,7 +5,7 @@ import scipy
 from casadi import *
 from src import *
 
-REBUILD_CUDA_CODEGEN = True
+REBUILD_CUDA_CODEGEN = False
 N_ENVS_SWEEP = [1, 5, 10, 50, 100, 250, 500, 1000, 5000, 10000]
 N_EVALS = 20
 

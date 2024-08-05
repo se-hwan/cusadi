@@ -21,10 +21,10 @@ set(CMAKE_CXX_STANDARD 11)
 # Set CUDA flags
 set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS}; -O3 -arch=sm_86 --use_fast_math)  # Adjust architecture as needed
 
-set(SWINGCONTROL_FUN_SOURCE codegen/swingControl_fun.cu)
+set(CASADI_SRB_NMPC_CODEGEN_ITER10_SOURCE codegen/CASADI_srb_nmpc_codegen_iter10.cu)
 
 # Include directories for your header files
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
-add_library(swingControl_fun SHARED ${SWINGCONTROL_FUN_SOURCE})
-target_link_libraries(swingControl_fun)
+add_library(CASADI_srb_nmpc_codegen_iter10 SHARED ${CASADI_SRB_NMPC_CODEGEN_ITER10_SOURCE})
+target_link_libraries(CASADI_srb_nmpc_codegen_iter10)

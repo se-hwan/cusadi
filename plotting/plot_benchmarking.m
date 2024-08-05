@@ -50,7 +50,7 @@ figure; hold on;
 
 num_env_labels = {'1', '5', '10', '50', '100', '250', '500', '1000', '5000', '10000'};
 num_instr_labels = {'1E1', '1E2', '1E3', '1E4', '1E5'};
-legend_entries = {'CusADi (ours)', 'Pytorch', 'CPU (Parallel)'};
+legend_entries = {'  CusADi (ours)', '  Pytorch', '  CPU (parallel)'};
 
 speedup_data = {};
 tmp_cusadi = []; tmp_pytorch = []; tmp_parallel_cpu = [];
@@ -105,7 +105,7 @@ leg_1 = legend([bar_handle{:}], legend_entries, 'Location', 'NorthWest');
 xlabel('Number of function evaluations');
 ylabel('Speedup (x)');
 % set(gca, 'FontSize', 11)
-axis([3, 11, 0, 1400])
+axis([3, 11, 0, 1200])
 ah1 = axes('position',get(gca,'position'),'visible','off');
 leg_2 = legend(ah1, [qw{:}], num_instr_labels, 'location', 'West');
 title(leg_1, 'Evaluation')

@@ -161,9 +161,9 @@ def generateCUDACodeDouble(f, filepath=None, benchmarking=True, debug_mode=True)
                     double *work,
                     double *outputs[],
                     const int batch_size) {
-            int blockSize = 384;
+            int blockSize = 256;
             int gridSize = (batch_size + blockSize - 1) / blockSize;
-            float time;
+            float milliseconds;
             cudaEvent_t start, stop;
             cudaEventCreate(&start);
             cudaEventCreate(&stop);
@@ -174,12 +174,12 @@ def generateCUDACodeDouble(f, filepath=None, benchmarking=True, debug_mode=True)
                                                     batch_size);
             cudaEventRecord(stop, 0);
             cudaEventSynchronize(stop);
-            cudaEventElapsedTime(&time, start, stop);
+            cudaEventElapsedTime(&milliseconds, start, stop);
     ''')
     if debug_mode:
         codegen_strings['c_evaluation'] += "\n    gpuErrchk(cudaPeekAtLastError());"
         codegen_strings['c_evaluation'] += "\n    gpuErrchk(cudaDeviceSynchronize());"
-    codegen_strings['c_evaluation'] += "\n    return time;"
+    codegen_strings['c_evaluation'] += "\n    return milliseconds/1000;"
     codegen_strings['c_evaluation'] += "\n}"
     codegen_strings['c_interface_closer'] = """\n\n}"""
 

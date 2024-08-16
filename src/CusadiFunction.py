@@ -32,6 +32,7 @@ class CusadiFunction:
         self.fn_name = fn_casadi.name()
         self.num_instances = num_instances
         self._fn_library = ctypes.CDLL(lib_filepath)
+        self._fn_library.evaluate.restype = ctypes.c_float
         print("Loaded CasADi function: ", self.fn_casadi)
         print("Loaded library: ", self._fn_library)
         self._setup()

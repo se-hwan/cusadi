@@ -39,10 +39,10 @@ class CusadiFunction:
     def evaluate(self, inputs):
         self._clearTensors()
         self._prepareInputTensor(inputs)
-        self._fn_library.evaluate(self._fn_input,
-                                  self._fn_work,
-                                  self._fn_output,
-                                  self.num_instances)
+        self.eval_time = self._fn_library.evaluate(self._fn_input,
+                                                   self._fn_work,
+                                                   self._fn_output,
+                                                   self.num_instances)
         # torch.cuda.synchronize()
 
     def getDenseOutput(self, out_idx = None):

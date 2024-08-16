@@ -48,7 +48,7 @@ ylabel("Evaluation time (s)")
 % Speedup plot
 figure; hold on;
 
-num_env_labels = {'1', '5', '10', '50', '100', '250', '500', '1000', '5000', '10000'};
+num_env_labels = arrayfun(@num2str, benchmark_data.N_ENVS_SWEEP, 'UniformOutput', false);
 num_instr_labels = {'1E1', '1E2', '1E3', '1E4', '1E5'};
 legend_entries = {'  CusADi (ours)', '  Pytorch', '  CPU (parallel)'};
 
@@ -87,7 +87,7 @@ for i = 1:num_datasets
     bar(bar_positions, speedup_data.parallel_cpu(:, i), bar_width, 'b');
     % errorbar(bar_positions, speedup_data(:, 2), std_data(i, :), '.k');
     marker_pos = max(speedup_data.cusadi(:, i), max(speedup_data.pytorch(:, i), speedup_data.parallel_cpu(:, i)));
-    plot(bar_positions, marker_pos + 50, markers{i}, 'MarkerEdgeColor', 'k', 'MarkerSize', 5);
+    plot(bar_positions, marker_pos + 0.5, markers{i}, 'MarkerEdgeColor', 'k', 'MarkerSize', 5);
 end
 
 qw{1} = plot(nan, 'o', 'MarkerEdgeColor', 'k');
@@ -102,12 +102,12 @@ bar_handle{1} = bar(nan, 'g');
 bar_handle{2} = bar(nan, 'FaceColor', '#EB5036');
 bar_handle{3} = bar(nan, 'b');
 leg_1 = legend([bar_handle{:}], legend_entries, 'Location', 'NorthWest');
-xlabel('Number of function evaluations');
+xlabel('Batch size');
 ylabel('Speedup (x)');
 % set(gca, 'FontSize', 11)
-axis([3, 11, 0, 1200])
+% axis([3, 11, 0, 1200])
 ah1 = axes('position',get(gca,'position'),'visible','off');
-leg_2 = legend(ah1, [qw{:}], num_instr_labels, 'location', 'West');
+leg_2 = legend(ah1, [qw{:}], num_instr_labels, 'location', 'NorthWest');
 title(leg_1, 'Evaluation')
 title(leg_2, 'Num. instr.')
 % set(gca, 'FontSize', 10)

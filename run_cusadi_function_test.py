@@ -16,7 +16,13 @@ def main(args):
                      for i in range(f.n_in())]
 
     fn_cusadi = CusadiFunction(f, args.n_envs)
+    import time
+    start = time.perf_counter_ns()
     fn_cusadi.evaluate(input_tensors)
+    torch.cuda.synchronize()
+    end = time.perf_counter_ns()
+    print(f"Time taken to evaluate {args.n_envs} environments: {(end-start)/1e9:.6f} seconds")
+    print("Time eval out: ", fn_cusadi.eval_time)
 
     output_numpy = [numpy.zeros((args.n_envs, f.nnz_out(i))) for i in range(f.n_out())]
     for n in range(args.n_envs):

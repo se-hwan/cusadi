@@ -51,3 +51,5 @@ legend([qw{:}], "50 N", "40 N", "30 N", "20 N", "10 N", 'Location', 'NorthEast')
 
 xlabel('Initial linear momentum (kg m/s)');
 ylabel('Initial angular momentum (kg m^2/s)');
+
+exportgraphics(gcf, 'test.pdf','ContentType','vector')

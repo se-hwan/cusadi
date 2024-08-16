@@ -157,22 +157,30 @@ def generateCUDACodeDouble(f, filepath=None, benchmarking=True, debug_mode=True)
     codegen_strings['c_interface_header'] = """\n\nextern "C" {\n"""
     codegen_strings['c_evaluation'] = textwrap.dedent(
     '''
-        void evaluate(const double *inputs[],
+        float evaluate(const double *inputs[],
                     double *work,
                     double *outputs[],
                     const int batch_size) {
-            int blockSize = 256;
+            int blockSize = 384;
             int gridSize = (batch_size + blockSize - 1) / blockSize;
+            float time;
+            cudaEvent_t start, stop;
+            cudaEventCreate(&start);
+            cudaEventCreate(&stop);
+            cudaEventRecord(start, 0);
             evaluate_kernel<<<gridSize, blockSize>>>(inputs,
                                                     work,
                                                     outputs,
                                                     batch_size);
+            cudaEventRecord(stop, 0);
+            cudaEventSynchronize(stop);
+            cudaEventElapsedTime(&time, start, stop);
     ''')
     if debug_mode:
         codegen_strings['c_evaluation'] += "\n    gpuErrchk(cudaPeekAtLastError());"
-        codegen_strings['c_evaluation'] += "\n    gpuErrchk(cudaDeviceSynchronize());\n}"
-    else:
-        codegen_strings['c_evaluation'] += "\n}"
+        codegen_strings['c_evaluation'] += "\n    gpuErrchk(cudaDeviceSynchronize());"
+    codegen_strings['c_evaluation'] += "\n    return time;"
+    codegen_strings['c_evaluation'] += "\n}"
     codegen_strings['c_interface_closer'] = """\n\n}"""
 
     # * Write codegen to file

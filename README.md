@@ -18,7 +18,10 @@
     <br />
   </h3>
 </div>
-[![media/parallel_MPC.mp4]](media/parallel_MPC.mp4)
+[![Parallel MPC for the MIT Humanoid in NVIDIA's IsaacGym]](https://github.com/se-hwan/cusadi/blob/dev/media/parallel_MPC.mp4)
+Parallel MPC for the MIT Humanoid in NVIDIA's IsaacGym
+
+
 
 If you use this work, please use the following citation:
 

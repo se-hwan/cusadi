@@ -21,10 +21,10 @@ set(CMAKE_CXX_STANDARD 11)
 # Set CUDA flags
 set(CUDA_NVCC_FLAGS ${CUDA_NVCC_FLAGS}; -O3 -arch=sm_86 --use_fast_math)  # Adjust architecture as needed
 
-set(FORWARDPASS_FUN_SOURCE codegen/forwardpass_fun.cu)
+set(INERTIAL_QUANTITIES_SOURCE codegen/inertial_quantities.cu)
 
 # Include directories for your header files
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
-add_library(forwardpass_fun SHARED ${FORWARDPASS_FUN_SOURCE})
-target_link_libraries(forwardpass_fun)
+add_library(inertial_quantities SHARED ${INERTIAL_QUANTITIES_SOURCE})
+target_link_libraries(inertial_quantities)

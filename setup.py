@@ -19,7 +19,10 @@ setup(
     ],
     python_requires='>=3.6',
     install_requires=[
-        # List your dependencies here
+        'casadi',
+        'numpy',
+        'matplotlib',
+        'torch'
     ],
     setup_requires=['setuptools'],
 )

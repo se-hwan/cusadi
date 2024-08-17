@@ -97,7 +97,6 @@ class CusadiFunction:
     def _prepareInputTensor(self, inputs):
         for i in range(self.fn_casadi.n_in()):
             self._input_tensors[i] = inputs[i]
-        for i in range(self.fn_casadi.n_in()):
             self._input_ptrs[i] = self._input_tensors[i].data_ptr()
         self._fn_input = self._castAsCPointer(self._input_ptrs.data_ptr(), 'int')
         self.inputs_sparse = self._input_tensors

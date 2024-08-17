@@ -1,2 +1,2 @@
 include README.md
-include build/*  # Include shared library files from the build folder
+include build/*

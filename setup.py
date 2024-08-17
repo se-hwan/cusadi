@@ -10,6 +10,7 @@ setup(
     author_email="sehwan@mit.edu",
     url="https://github.com/se-hwan/cusadi",
     packages=find_packages(),
+    # package_data={'test': ['test.txt']},
     include_package_data=True,
     classifiers=[
         "Programming Language :: Python :: 3",

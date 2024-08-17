@@ -18,7 +18,7 @@
     <br />
   </h3>
 </div>
-[![Parallel MPC for the MIT Humanoid in NVIDIA's IsaacGym]](https://github.com/se-hwan/cusadi/blob/dev/media/parallel_MPC.gif)
+![Parallel MPC for the MIT Humanoid in NVIDIA's IsaacGym](https://github.com/se-hwan/cusadi/blob/dev/media/parallel_MPC.gif)
 Parallel MPC for the MIT Humanoid in NVIDIA's IsaacGym
 
 

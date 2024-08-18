@@ -20,9 +20,8 @@
 </div>
 
 <p align="center">
-  <video src="media/parallel_MPC.mp4" width=800 alt="animated" />
+  <video src="https://github.com/user-attachments/assets/289946ea-c5c7-4929-a82e-8277af8a5b82" width=800 alt="animated" />
 </p>
-https://github.com/user-attachments/assets/289946ea-c5c7-4929-a82e-8277af8a5b82
 <p align="center">
     Evaluating MPC in parallel for thousands of instances of the MIT Humanoid.
     CusADi efficiently parallelizes functions for applications such as reinforcement learning, parallel simulation, and sensitivity analysis.

@@ -19,10 +19,13 @@
   </h3>
 </div>
 
-![](https://github.com/se-hwan/cusadi/blob/dev/media/parallel_MPC.gif)
-
-Parallel MPC for the MIT Humanoid in NVIDIA's IsaacGym
-
+<p align="center">
+  <video src="media/parallel_MPC.mp4" width=800 alt="animated" />
+</p>
+<p align="center">
+    Evaluating MPC in parallel for thousands of instances of the MIT Humanoid.
+    CusADi efficiently parallelizes functions for applications such as reinforcement learning, parallel simulation, and sensitivity analysis.
+</p>
 
 
 If you use this work, please use the following citation:
@@ -32,10 +35,11 @@ If you use this work, please use the following citation:
     doi       = {},
 }
 ```
+Details of our work can be found in the paper: 
 
 
 <!-- TABLE OF CONTENTS -->
-<details>
+<details open>
   <summary>Table of Contents</summary>
   <ol>
     <li>
@@ -60,18 +64,24 @@ If you use this work, please use the following citation:
 <!-- ABOUT THE PROJECT -->
 ## About The Project
 
-[![Product Name Screen Shot][product-screenshot]](https://example.com)
+`cusadi` is a framework for parallelizing arbitrary symbolic functions on the GPU.
+It extends the graph expression structure of `casadi` by generating and compiling `CUDA` kernels for efficient evaluation of thousands of function instances. 
+`casadi` is particularly well-suited for this because of it is able to exploit sparsity when building its expression graphs, ensuring efficient computation.
 
-There are many great README templates available on GitHub; however, I didn't find one that really suited my needs so I created this enhanced one. I want to create a README template so amazing that it'll be the last one you ever need -- I think this is it.
+<p align="center">
+  <img src="media/fig_cusadiDiagram.png" width=800 alt="" /> <br>
+    The CasADi expression graph is evaluated by iterating through instructions and performing each operation on scalar values. CusADi can exploit this same structure and evaluate the function in parallel with the GPU by vectorizing each operation to act on tensors of data instead of scalars.
+</p>
 
-Here's why:
-* Your time should be focused on creating something amazing. A project that solves a problem and helps others
-* You shouldn't be doing the same tasks over and over like creating a README from scratch
-* You should implement DRY principles to the rest of your life :smile:
 
-Of course, no one template will serve all projects since your needs may be different. So I'll be adding more in the near future. You may also suggest changes by forking this repo and creating a pull request or opening an issue. Thanks to all the people have contributed to expanding this template!
+We demonstrate using `cusadi` for several robotics applications, including parallelizing MPC, augmenting RL with parallelized dynamics algorithms, creating parallel simulations, and running parameters sweeps. 
+Benchmarks show that `cusadi` offers significant speedups, especially for reinforcement learning applications where significant overhead is incurred from CPU-GPU data transfer.
 
-Use the `BLANK_README.md` to get started.
+<p align="center">
+  <img src="media/fig_benchmark.png" width=800 alt="" /> <br>
+    (Left): Speedups from CusADi relative to serial CPU evaluation of five functions, each increasing in complexity. <br>
+    (Right): Speedups from CusADi relative to serial CPU evaluation, including overhead time from CPU-GPU data transfer. 
+</p>
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -233,7 +243,6 @@ Se Hwan Jeon - sehwan@mit.edu
 [issues-shield]: https://img.shields.io/github/issues/se-hwan/cusadi.svg?style=for-the-badge
 [issues-url]: https://github.com/se-hwan/cusadi/issues
 [license-shield]: https://img.shields.io/github/license/se-hwan/cusadi.svg?style=for-the-badge
-[license-url]: https://github.com/se-hwan/cusadi/blob/master/LICENSE.txt
+[license-url]: https://github.com/se-hwan/cusadi/blob/dev/LICENSE.txt
 [linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555
 [linkedin-url]: https://linkedin.com/in/othneildrew
-[product-screenshot]: images/screenshot.png

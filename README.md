@@ -2,9 +2,7 @@
 
 <br />
 <div align="center">
-
   <h1 align="center">CusADi</h1>
-
   <h3 align="center">
     Parallelizing symbolic expressions from CasADi on the GPU
     <br />
@@ -12,14 +10,14 @@
 </div>
 
 <p align="center">
-  <video src="https://github.com/user-attachments/assets/289946ea-c5c7-4929-a82e-8277af8a5b82" width=800 alt="animated" />
+  <video autoplay="true" loop="true" src="https://github.com/user-attachments/assets/289946ea-c5c7-4929-a82e-8277af8a5b82" width=800 alt="animated" />
 </p>
 <p align="center">
-    Evaluating MPC in parallel for thousands of instances of the MIT Humanoid.
-    CusADi efficiently parallelizes functions for applications such as reinforcement learning, parallel simulation, and sensitivity analysis.
+Evaluating MPC in parallel for thousands of instances of the MIT Humanoid.
+CusADi efficiently parallelizes functions for applications such as reinforcement learning, parallel simulation, and sensitivity analysis.
 </p>
 
-
+\
 If you use this work, please use the following citation:
 
 ```

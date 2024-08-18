@@ -10,9 +10,7 @@
 </div>
 
 <p align="center">
-  <video width="800" controls autoplay loop>
-    <source src="https://github.com/user-attachments/assets/289946ea-c5c7-4929-a82e-8277af8a5b82">
-  </video>
+  <video src="https://github.com/user-attachments/assets/289946ea-c5c7-4929-a82e-8277af8a5b82" width=800 autoplay=true loop=true />
 </p>
 <p align="center">
 Evaluating MPC in parallel for thousands of instances of the MIT Humanoid.

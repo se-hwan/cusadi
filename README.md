@@ -59,7 +59,7 @@ It extends the graph expression structure of `casadi` by generating and compilin
 `casadi` is particularly well-suited for this because of it is able to exploit sparsity when building its expression graphs, ensuring efficient computation.
 
 <p align="center">
-  <img src="media/fig_cusadiDiagram.png" width=800 alt="" /> <br>
+  <img src="media/fig_cusadiDiagram.png" width=700 alt="" /> <br>
     The CasADi expression graph is evaluated by iterating through instructions and performing each operation on scalar values. CusADi can exploit this same structure and evaluate the function in parallel with the GPU by vectorizing each operation to act on tensors of data instead of scalars.
 </p>
 
@@ -68,7 +68,7 @@ We demonstrate using `cusadi` for several robotics applications, including paral
 Benchmarks show that `cusadi` offers significant speedups, especially for reinforcement learning applications where significant overhead is incurred from CPU-GPU data transfer.
 
 <p align="center">
-  <img src="media/fig_benchmark.png" width=800 alt="" /> <br>
+  <img src="media/fig_benchmark.png" width=700 alt="" /> <br>
     (Left): Speedups from CusADi relative to serial CPU evaluation of five functions, each increasing in complexity. <br>
     (Right): Speedups from CusADi relative to serial CPU evaluation, including overhead time from CPU-GPU data transfer. 
 </p>

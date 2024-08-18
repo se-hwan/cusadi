@@ -10,7 +10,7 @@
 </div>
 
 <p align="center">
-  <video width=800 controls autoplay loop>
+  <video width="800" controls autoplay loop>
     <source src="https://github.com/user-attachments/assets/289946ea-c5c7-4929-a82e-8277af8a5b82">
   </video>
 </p>

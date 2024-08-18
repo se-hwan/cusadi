@@ -1,13 +1,5 @@
 <a id="readme-top"></a>
 
-[![Contributors][contributors-shield]][contributors-url]
-[![Forks][forks-shield]][forks-url]
-[![Stargazers][stars-shield]][stars-url]
-[![Issues][issues-shield]][issues-url]
-[![MIT License][license-shield]][license-url]
-[![LinkedIn][linkedin-shield]][linkedin-url]
-
-
 <br />
 <div align="center">
 
@@ -231,18 +223,3 @@ Se Hwan Jeon - sehwan@mit.edu
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-
-<!-- MARKDOWN LINKS & IMAGES -->
-<!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
-[contributors-shield]: https://img.shields.io/github/contributors/se-hwan/cusadi.svg?style=for-the-badge
-[contributors-url]: https://github.com/se-hwan/cusadi/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/se-hwan/cusadi.svg?style=for-the-badge
-[forks-url]: https://github.com/se-hwan/cusadi/network/members
-[stars-shield]: https://img.shields.io/github/stars/se-hwan/cusadi.svg?style=for-the-badge
-[stars-url]: https://github.com/se-hwan/cusadi/stargazers
-[issues-shield]: https://img.shields.io/github/issues/se-hwan/cusadi.svg?style=for-the-badge
-[issues-url]: https://github.com/se-hwan/cusadi/issues
-[license-shield]: https://img.shields.io/github/license/se-hwan/cusadi.svg?style=for-the-badge
-[license-url]: https://github.com/se-hwan/cusadi/blob/dev/LICENSE.txt
-[linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555
-[linkedin-url]: https://linkedin.com/in/othneildrew

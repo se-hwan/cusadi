@@ -17,6 +17,8 @@ Evaluating MPC in parallel for thousands of instances of the MIT Humanoid.
 CusADi efficiently parallelizes functions for applications such as reinforcement learning, parallel simulation, and sensitivity analysis.
 </p>
 
+Overview and more videos: https://www.youtube.com/watch?v=NxeujmgcEL4
+
 \
 If you use this work, please use the following citation:
 

@@ -21,8 +21,14 @@ CusADi efficiently parallelizes functions for applications such as reinforcement
 If you use this work, please use the following citation:
 
 ```
-@article{tmp,
-    doi       = {},
+@misc{jeon2024cusadigpuparallelizationframework,
+      title={CusADi: A GPU Parallelization Framework for Symbolic Expressions and Optimal Control}, 
+      author={Se Hwan Jeon and Seungwoo Hong and Ho Jae Lee and Charles Khazoom and Sangbae Kim},
+      year={2024},
+      eprint={2408.09662},
+      archivePrefix={arXiv},
+      primaryClass={cs.RO},
+      url={https://arxiv.org/abs/2408.09662}, 
 }
 ```
 Details of our work can be found in the paper: 

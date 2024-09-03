@@ -18,6 +18,7 @@ CusADi efficiently parallelizes functions for applications such as reinforcement
 </p>
 
 Overview and more videos: https://www.youtube.com/watch?v=NxeujmgcEL4
+
 ArXiv: https://arxiv.org/abs/2408.09662
 
 \

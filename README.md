@@ -18,6 +18,7 @@ CusADi efficiently parallelizes functions for applications such as reinforcement
 </p>
 
 Overview and more videos: https://www.youtube.com/watch?v=NxeujmgcEL4
+ArXiv: https://arxiv.org/abs/2408.09662
 
 \
 If you use this work, please use the following citation:
@@ -86,10 +87,6 @@ Benchmarks show that `cusadi` offers significant speedups, especially for reinfo
 
 <!-- GETTING STARTED -->
 ## Getting Started
-
-This is an example of how you may give instructions on setting up your project locally.
-To get a local copy up and running follow these simple example steps.
-
 ### Dependencies
 
 `cusadi` was built on the following. Other versions may work, but are untested.

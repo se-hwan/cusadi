@@ -4,6 +4,10 @@
 # C/C++ files
 *.so
 
+# Generated CMakeLists.txt file
+CMakeLists.txt
+build/
+
 # Virtual environments
 *venv
 

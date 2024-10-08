@@ -14,7 +14,6 @@ def generateCMakeLists(casadi_fns):
     # Find CUDA package
     include(CheckLanguage)
     check_language(CUDA)
-    find_package(CUDAToolkit REQUIRED)
     if(CMAKE_CUDA_COMPILER)
     enable_language(CUDA)
     include_directories(${CUDA_INCLUDE_DIRS})

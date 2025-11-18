@@ -6,3 +6,10 @@ dist/
 wheels/
 *.egg-info
 
+# Codegen files
+*.casadi
+
+# Robot-specific files
+*.dae
+*.stl
+*.urdf

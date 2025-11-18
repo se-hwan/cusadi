@@ -1,0 +1,13 @@
+name: cusadi_venv
+channels:
+  - defaults
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pinocchio
+  - matplotlib
+  - osqp
+  - conda-lock
+  - pytest
+  - scipy
+  - jupyterlab

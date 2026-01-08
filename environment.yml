@@ -1,4 +1,4 @@
-name: cusadi_venv
+name: env_cusadi
 channels:
   - defaults
   - conda-forge
@@ -11,3 +11,4 @@ dependencies:
   - pytest
   - scipy
   - jupyterlab
+  - ninja

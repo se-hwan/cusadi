@@ -5,11 +5,19 @@ build/
 dist/
 wheels/
 *.egg-info
+.pytest_cache
 
 # Codegen files
 *.casadi
+*.cu
+*.casadi
+*.o
 
 # Robot-specific files
 *.dae
 *.stl
 *.urdf
+
+# Setup
+.vscode
+

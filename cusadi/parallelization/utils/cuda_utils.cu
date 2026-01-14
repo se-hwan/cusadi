@@ -1,6 +1,3 @@
-#ifndef UTILS_CUH
-#define UTILS_CUH
-
 #include <iostream>
 #include <cuda_runtime.h>
 
@@ -30,13 +27,12 @@
 
 
 // ! Print data on GPU memory
-static __global__ void printGPUData(double** gpu_matrix, int env, int cols) {
+static __global__ void printGPUData(double* gpu_matrix, int env, int cols) {
     int row = blockIdx.x;
     int col = threadIdx.x; 
     if (row == env && col < cols) {
-        double value = gpu_matrix[row][col];
+        int idx = env*cols + col;
+        double value = gpu_matrix[idx];
         printf("Value at row %d, col %d: %f\n", row, col, value);
     }
 }
-
-#endif // UTILS_CUH

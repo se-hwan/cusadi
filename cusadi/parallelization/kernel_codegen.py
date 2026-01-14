@@ -2,7 +2,6 @@ import os
 import textwrap
 import casadi as ca
 from casadi import *
-from .kernel_operations import OP_CUDA_DICT_COALESCED as CUDA_OPS
 
 # Get the directory of the current file
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -28,16 +27,19 @@ def build_pybind(fn, precision="float"):
     print(f"Pybind complete for {fn.name()}")
     print(f"Binding written to {os.path.join(CODEGEN_DIR, f'bindings.cpp')}")
 
-def build_kernel(fn, batch_size=1, precision="float"):
+def build_kernel(fn, batch_size=1, precision="float", dynamic_batching=False):
     assert precision in ["float", "double"], \
         "Precision must be either 'float' or 'double'"
-    print_function_info(fn, batch_size, precision)
-    cuda_codegen(fn, batch_size, precision)
+    if dynamic_batching:
+        assert batch_size > 0, "Batch size must be greater than 0"
+    print_function_info(fn, batch_size, precision, dynamic_batching)
+    cuda_codegen(fn, batch_size, precision, dynamic_batching)
     print(f"CUDA codegen complete for {fn.name()}.")
     print(f"Kernel written to {os.path.join(CODEGEN_DIR, f'{fn.name()}.cu')}")
 
-def print_function_info(f, batch_size, precision):
+def print_function_info(f, batch_size, precision, dynamic_batching):
     print("Generating CUDA code for CasADi function: ", f.name())
+    print("     Dynamic batching: ", dynamic_batching)
     print("     Number of instructions: ", f.n_instructions())
     print("     Number of inputs: ", f.n_in())
     print("     Number of outputs: ", f.n_out())
@@ -45,19 +47,19 @@ def print_function_info(f, batch_size, precision):
     print("     Batch size: ", batch_size)
     print("     Precision: ", precision)
 
-def cuda_codegen(f, batch_size=1, precision="float"):
+def cuda_codegen(f, batch_size, precision, dynamic_batching):
     f_name = f.name()
     codegen_filepath = os.path.join(CODEGEN_DIR, f"{f_name}.cu")
     codegen_file = open(codegen_filepath, "w+")
     
     codegen_string = ""
-    codegen_string += get_cuda_header(f, precision)
-    codegen_string += get_kernel(f, batch_size, precision)
+    codegen_string += get_cuda_header(f)
+    codegen_string += get_kernel(f, batch_size, precision, dynamic_batching)
     codegen_string += get_c_interface(f)
     codegen_file.write(codegen_string)
     codegen_file.close()
 
-def get_cuda_header(f, precision):
+def get_cuda_header(f):
     # * Codegen for const declarations and indices
     n_w = f.sz_w()
     n_in = f.n_in()
@@ -67,7 +69,7 @@ def get_cuda_header(f, precision):
     str_header = "// AUTOMATICALLY GENERATED CODE FOR CUSADI\n"
     str_header = ""
     str_header += "#include <cuda_runtime.h>\n"
-    str_header += "#include \"../utils/cuda_utils.cuh\"\n\n"
+    str_header += "#include \"../utils/cuda_utils.cu\"\n\n"
     str_header += "#include <math.h>\n"
     str_header += "#include <limits.h>\n"
     str_header += f"\n__constant__ int nnz_in[] = {{{','.join(map(str, nnz_in))}}};"
@@ -75,7 +77,7 @@ def get_cuda_header(f, precision):
     str_header += f"\n__constant__ int n_w = {n_w};\n"
     return str_header
 
-def get_kernel(f, batch_size, precision):
+def get_kernel(f, batch_size, precision, dynamic_batching):
     # * Parse CasADi function
     f_name = f.name()
     n_instr = f.n_instructions()
@@ -106,9 +108,15 @@ def get_kernel(f, batch_size, precision):
     str_kernel +=   "   int tID = blockIdx.x * blockDim.x + threadIdx.x;\n"
     str_kernel +=   "   if (tID < batch_size) {\n"
 
+    if dynamic_batching:
+        offset = 1
+        from .kernel_operations import OP_CUDA_DICT_COALESCED_v2 as CUDA_OPS
+    else:
+        offset = batch_size
+        from .kernel_operations import OP_CUDA_DICT_COALESCED as CUDA_OPS
+
     o_instr = 0
     i_instr = 0
-    offset = 1 if batch_size == 0 else batch_size
     for k in range(INSTR_LIMIT):
         op = operations[k]
         o_idx = output_idx[o_instr]
@@ -131,6 +139,35 @@ def get_kernel(f, batch_size, precision):
         i_instr += input_idx_lengths[k + 1]
     str_kernel += "\n    }"           # End of if statement
     str_kernel += "\n}\n\n"           # End of kernel
+
+    # # ! ORIGINAL
+    # from .kernel_operations import OP_CUDA_DICT_COALESCED as CUDA_OPS
+    # o_instr = 0
+    # i_instr = 0
+    # offset = 1 #if batch_size == 0 else batch_size
+    # for k in range(INSTR_LIMIT):
+    #     op = operations[k]
+    #     o_idx = output_idx[o_instr]
+    #     i_idx = input_idx[i_instr]
+    #     if op == OP_CONST:
+    #         str_kernel += CUDA_OPS[op] % (offset*o_idx, const_instr[k])
+    #     elif op == OP_INPUT:
+    #         str_kernel += CUDA_OPS[op] % (offset*o_idx, i_idx, i_idx, input_idx[i_instr + 1])
+    #     elif op == OP_OUTPUT:
+    #         str_kernel += CUDA_OPS[op] % (o_idx, o_idx, output_idx[o_instr + 1], offset*i_idx)
+    #     elif op == OP_SQ:
+    #         str_kernel += CUDA_OPS[op] % (offset*o_idx, offset*i_idx, offset*i_idx)
+    #     elif CUDA_OPS[op].count("%d") == 3:
+    #         str_kernel += CUDA_OPS[op] % (offset*o_idx, offset*i_idx, offset*input_idx[i_instr + 1])
+    #     elif CUDA_OPS[op].count("%d") == 2:
+    #         str_kernel += CUDA_OPS[op] % (offset*o_idx, offset*i_idx)
+    #     else:
+    #         raise Exception('Unknown CasADi operation: ' + str(op))
+    #     o_instr += output_idx_lengths[k + 1]
+    #     i_instr += input_idx_lengths[k + 1]
+    # str_kernel += "\n    }"           # End of if statement
+    # str_kernel += "\n}\n\n"           # End of kernel
+    
     return str_kernel
 
 def get_c_interface(f):

@@ -1,6 +1,18 @@
 
+import os
 import numpy as np
 import casadi as ca
+
+def save_function(function):
+    util_dir = os.path.dirname(os.path.abspath(__file__))
+    cusadi_dir = os.path.dirname(util_dir)
+    parallel_dir = os.path.join(cusadi_dir, 'parallelization')
+    function_dir = os.path.join(parallel_dir, 'casadi_fns')
+    function_filepath = os.path.join(function_dir, f"{function.name()}.casadi")
+    function.save(function_filepath)
+    print(f"Saved CasADi function to {function_filepath}:")
+    print(f"    {function.name()} ({function.n_instructions()} instructions)")
+    return function.name()
 
 def auto_concat(items: list, symbolic=False):
     if symbolic:
@@ -42,7 +54,9 @@ def get_codegen_options(custom_options: dict={}):
         options[key] = value
     return options
 
-def get_solver_options(solver, custom_options: dict={}, verbose=True):
+def get_solver_options(solver, custom_options: dict={}):
+    verbose = custom_options['verbose']
+
     if solver == 'ipopt':
         p_opts = {'expand': True}
         s_opts = {
@@ -85,4 +99,20 @@ def get_solver_options(solver, custom_options: dict={}, verbose=True):
             p_opts['ipopt.sb'] = 'yes'
         for key, value in custom_options.items():
             s_opts[key] = value
-    return p_opts, s_opts
+        solver_cfg = (p_opts, s_opts)
+
+    elif solver == 'osqp':
+        solver_cfg = {
+            'rho': 0.01,
+            'verbose': verbose,
+            'adaptive_rho': True,
+            'max_iter': 25,
+            'scaling': 10,
+            'check_termination': 50,
+            'sigma': 1e-6,
+            'alpha': 1.6,
+            'warm_start': True,
+        }
+        for key, value in custom_options.items():
+            solver_cfg[key] = value
+    return solver_cfg

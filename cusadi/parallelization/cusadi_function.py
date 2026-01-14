@@ -29,18 +29,24 @@ class CusadiFunction:
         self.n_in = fn_casadi.n_in()
         self.n_out = fn_casadi.n_out()
         self.batch_size = batch_size
+        self.n_instr = fn_casadi.n_instructions()
 
         try:
+            import cusadi_kernels
+            self._fn_kernel = getattr(cusadi_kernels, self.fn_name)
+        except:
+            print("cusadi_kernels not found. Building kernels...")
             from .utils.jit_kernels import compile_and_load_kernels
             compile_and_load_kernels()
-            import cusadi_kernels
-        except:
-            print("Could not import cusadi_kernels.")
-            print("Generate kernels before instantiating CusadiFunction.")
-            raise SystemExit
-        self._fn_kernel = getattr(cusadi_kernels, self.fn_name)
-
-        print("Loaded CasADi function: ", self.fn_casadi)
+            try:
+                import cusadi_kernels
+                self._fn_kernel = getattr(cusadi_kernels, self.fn_name)
+            except:
+                print("Could not import cusadi_kernels.")
+                print("Generate kernels before instantiating CusadiFunction.")
+                print("Call parallelize_functions([fn_name]) to generate kernels.")
+                raise SystemExit
+        print(f"Loaded CasADi function {self.fn_casadi.name()} with {self.n_instr} instructions.")
         print("Loaded library: ", self._fn_kernel)
         self._setup()
 
@@ -65,6 +71,7 @@ class CusadiFunction:
         # Kernel evaluation
         start = time.time_ns()
         self.evaluate(input_tensors)
+        torch.cuda.synchronize()
         end = time.time_ns()
         print(f"Time taken for {n_test_envs} environments (GPU): {(end - start)/1e9} seconds.")
 
@@ -76,7 +83,7 @@ class CusadiFunction:
             for i in range(self.n_out):
                 outputs_np[i][n, :] = self.fn_casadi.call(inputs_np)[i].nonzeros()
         end = time.time_ns()
-        print(f"Time taken for {n_test_envs} environments (CPU): {(end - start)/1e9} seconds.")
+        print(f"Time taken for {n_test_envs} environments (serial, CPU): {(end - start)/1e9} seconds.")
         
         # Error calculation
         print(f"Average error for each environment:")

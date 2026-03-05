@@ -54,9 +54,7 @@ def get_codegen_options(custom_options: dict={}):
         options[key] = value
     return options
 
-def get_solver_options(solver, custom_options: dict={}):
-    verbose = custom_options['verbose']
-
+def get_solver_options(solver, verbose=True, custom_options:dict={}):
     if solver == 'ipopt':
         p_opts = {'expand': True}
         s_opts = {
@@ -98,6 +96,8 @@ def get_solver_options(solver, custom_options: dict={}):
             p_opts['print_time'] = 0
             p_opts['ipopt.sb'] = 'yes'
         for key, value in custom_options.items():
+            if key not in s_opts and key not in p_opts:
+                continue
             s_opts[key] = value
         solver_cfg = (p_opts, s_opts)
 

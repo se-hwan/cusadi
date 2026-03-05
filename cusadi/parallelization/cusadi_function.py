@@ -13,6 +13,7 @@ class CusadiFunction:
     inputs_sparse = []
     outputs_sparse = []
     outputs_dense = []
+    precision = {}
 
     # Private variables:
     _device = 'cuda'
@@ -22,7 +23,7 @@ class CusadiFunction:
     output_tensors = []
 
     # ! Public methods:
-    def __init__(self, fn_casadi, batch_size):
+    def __init__(self, fn_casadi, batch_size, precision="float"):
         assert torch.cuda.is_available()
         self.fn_casadi = fn_casadi
         self.fn_name = fn_casadi.name()
@@ -30,14 +31,21 @@ class CusadiFunction:
         self.n_out = fn_casadi.n_out()
         self.batch_size = batch_size
         self.n_instr = fn_casadi.n_instructions()
+        if precision == 'float':
+            self.precision['torch'] = torch.float
+            self.precision['np'] = np.float32
+        else:
+            self.precision['torch'] = torch.double
+            self.precision['np'] = np.float64
 
         try:
             import cusadi_kernels
             self._fn_kernel = getattr(cusadi_kernels, self.fn_name)
         except:
             print("cusadi_kernels not found. Building kernels...")
+            from .kernel_codegen import get_codegen_kernel_names
             from .utils.jit_kernels import compile_and_load_kernels
-            compile_and_load_kernels()
+            compile_and_load_kernels(get_codegen_kernel_names())
             try:
                 import cusadi_kernels
                 self._fn_kernel = getattr(cusadi_kernels, self.fn_name)
@@ -46,7 +54,7 @@ class CusadiFunction:
                 print("Generate kernels before instantiating CusadiFunction.")
                 print("Call parallelize_functions([fn_name]) to generate kernels.")
                 raise SystemExit
-        print(f"Loaded CasADi function {self.fn_casadi.name()} with {self.n_instr} instructions.")
+        print(f"Loaded CusADi function {self.fn_casadi.name()} with {self.n_instr} instructions.")
         print("Loaded library: ", self._fn_kernel)
         self._setup()
 
@@ -57,11 +65,14 @@ class CusadiFunction:
                                          *self.input_tensors,
                                          *self.output_tensors,
                                          self._work_tensor)
+        return self.output_tensors
 
     def test(self, n_test_envs=4096, seed=np.random.randint(0, 1e6)):
         torch.manual_seed(seed)
         # Randomized inputs
-        input_tensors = [torch.rand(n_test_envs, self.fn_casadi.nnz_in(i), device=self._device, dtype=torch.float).contiguous()
+        input_tensors = [torch.rand(n_test_envs, self.fn_casadi.nnz_in(i),
+                                    device=self._device,
+                                    dtype=self.precision['torch']).contiguous()
                         for i in range(self.n_in)]
         print("Checking input dimensions...")
         print("    Input tensor sizes: ", [self.input_tensors[i].shape for i in range(self.n_in)])
@@ -115,13 +126,18 @@ class CusadiFunction:
             raise SystemExit
 
     # * Private methods:
-    # ! Need to generalize this for float type eventually
     def _setup(self):
-        self.input_tensors = [torch.zeros((self.batch_size, self.fn_casadi.nnz_in(i)), device=self._device, dtype=torch.float).contiguous()
+        self.input_tensors = [torch.zeros((self.batch_size, self.fn_casadi.nnz_in(i)),
+                                           device=self._device,
+                                           dtype=self.precision['torch']).contiguous()
                                for i in range(self.n_in)]
-        self.output_tensors = [torch.zeros((self.batch_size, self.fn_casadi.nnz_out(i)), device=self._device, dtype=torch.float).contiguous()
+        self.output_tensors = [torch.zeros((self.batch_size, self.fn_casadi.nnz_out(i)),
+                                            device=self._device,
+                                            dtype=self.precision['torch']).contiguous()
                                 for i in range(self.n_out)]
-        self._work_tensor = torch.zeros((self.fn_casadi.sz_w(), self.batch_size), device=self._device, dtype=torch.float).contiguous()
+        self._work_tensor = torch.zeros((self.fn_casadi.sz_w(), self.batch_size),
+                                        device=self._device,
+                                        dtype=self.precision['torch']).contiguous()
         
 
     def _clearTensors(self):

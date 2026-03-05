@@ -4,7 +4,7 @@ import torch
 from torch.utils.cpp_extension import load
 
 # TODO: detect GPU architecture
-def compile_and_load_kernels(fn_names='all'):
+def compile_and_load_kernels(kernel_names):
     if torch.cuda.is_available():
         major, minor = torch.cuda.get_device_capability()
         os.environ["TORCH_CUDA_ARCH_LIST"] = f"{major}.{minor}"
@@ -21,11 +21,8 @@ def compile_and_load_kernels(fn_names='all'):
     print("Build directory: ", f"{build_dir}")
     
     kernel_sources = []
-    if fn_names == 'all':
-        kernel_sources.extend(glob.glob(codegen_dir + '/*.cu'))
-    else:
-        for fn_name in fn_names:
-            kernel_sources.append(os.path.join(codegen_dir, f'{fn_name}.cu'))
+    for name in kernel_names:
+        kernel_sources.append(os.path.join(codegen_dir, f'{name}.cu'))
     
     if len(kernel_sources) == 0:
         print("No kernel sources found. Skipping JIT compilation.")
@@ -41,7 +38,10 @@ def compile_and_load_kernels(fn_names='all'):
         )
 
 def compile_and_load_cudss():
-    os.environ["TORCH_CUDA_ARCH_LIST"] = "native"
+    if torch.cuda.is_available():
+        major, minor = torch.cuda.get_device_capability()
+        os.environ["TORCH_CUDA_ARCH_LIST"] = f"{major}.{minor}"
+        print(f"\n**********Compiling cuDSS for detected CUDA architecture {major}.{minor}**********")
     parallel_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     project_dir = os.path.dirname(os.path.dirname(parallel_dir))
     cudss_source = [os.path.join(parallel_dir, 'utils', 'cudss_binding.cpp'),

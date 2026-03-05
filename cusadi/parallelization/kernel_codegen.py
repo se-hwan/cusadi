@@ -1,4 +1,5 @@
 import os
+import re
 import textwrap
 import casadi as ca
 from casadi import *
@@ -6,26 +7,20 @@ from casadi import *
 # Get the directory of the current file
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 CODEGEN_DIR = os.path.join(CURRENT_DIR, "codegen")
-FUNCTION_DIR = os.path.join(CURRENT_DIR, "casadi_fns")
 
-def get_functions(fn_names='all'):
-    casadi_fns = []
-    for filename in os.listdir(FUNCTION_DIR):
-        if filename.endswith(".casadi"):
-            fn_filepath = os.path.join(FUNCTION_DIR, filename)
-            try:
-                fn = ca.Function.load(fn_filepath)
-                if fn_names == 'all' or fn.name() in fn_names:
-                    casadi_fns.append(fn)
-                    print(f"Loaded CasADi function: {fn.name()} ({fn.n_instructions()} instructions)")
-            except Exception as e:
-                print(f"Error loading {fn_filepath}: {e}")
-    return casadi_fns
+
+def get_codegen_kernel_names():
+    return sorted(
+        os.path.splitext(filename)[0]
+        for filename in os.listdir(CODEGEN_DIR)
+        if filename.endswith(".cu")
+    )
 
 def build_pybind(fn, precision="float"):
-    pybind_codegen(fn, precision)
+    remaining_bindings = pybind_codegen(fn, precision)
     print(f"Pybind complete for {fn.name()}")
     print(f"Binding written to {os.path.join(CODEGEN_DIR, f'bindings.cpp')}")
+    return remaining_bindings
 
 def build_kernel(fn, batch_size=1, precision="float", dynamic_batching=False):
     assert precision in ["float", "double"], \
@@ -110,7 +105,7 @@ def get_kernel(f, batch_size, precision, dynamic_batching):
 
     if dynamic_batching:
         offset = 1
-        from .kernel_operations import OP_CUDA_DICT_COALESCED_v2 as CUDA_OPS
+        from .kernel_operations import OP_CUDA_DICT as CUDA_OPS
     else:
         offset = batch_size
         from .kernel_operations import OP_CUDA_DICT_COALESCED as CUDA_OPS
@@ -193,18 +188,13 @@ def get_c_interface(f):
     str_c_interface += "}\n\n"
     return str_c_interface
 
-def pybind_codegen(f, precision):
-    """Generate Python bindings for the CasADi function."""
-    f_name = f.name()
-    n_in = f.n_in()
-    n_out = f.n_out()
-    
-    # Generate bindings.h - completely overwrite the file
-    bindings_header_path = os.path.join(CODEGEN_DIR, "bindings.h")
-    with open(bindings_header_path, 'r') as f:
-        header_content = f.read()
+def _default_bindings_header():
+    return "#pragma once\n#include <torch/extension.h>\n\n\n"
 
-    # Build function signature
+def _default_bindings_cpp():
+    return '#include "bindings.h"\n\nPYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {\n\n}\n'
+
+def _generate_header_binding_block(f_name, n_in, n_out, precision):
     fn_signature = f"extern \"C\" void launch_{f_name}_kernel(\n"
     fn_signature += "    const int batch_size,\n"
     for i in range(n_in):
@@ -212,53 +202,137 @@ def pybind_codegen(f, precision):
     for i in range(n_out):
         fn_signature += f"    float* output_{i},\n"
     fn_signature += "    float* work);\n\n"
-    
-    #### PYBIND CPP ####    
+
     fn_binding = f"void {f_name}_binding(\n"
     fn_binding += "    const int batch_size,\n"
-    for i in range(n_in): # Input parameters
+    for i in range(n_in):
         fn_binding += f"    const torch::Tensor& input_{i},\n"
-    for i in range(n_out): # Output parameters
+    for i in range(n_out):
         fn_binding += f"    torch::Tensor& output_{i},\n"
     fn_binding += "    torch::Tensor& work) {\n"
     fn_binding += f"    launch_{f_name}_kernel(\n"
-    fn_binding += f"        batch_size,\n"
-    
-    # Function call parameters
+    fn_binding += "        batch_size,\n"
     for i in range(n_in):
         fn_binding += f"        input_{i}.data_ptr<{precision}>(),\n"
     for i in range(n_out):
         fn_binding += f"        output_{i}.data_ptr<{precision}>(),\n"
     fn_binding += f"        work.data_ptr<{precision}>());\n"
     fn_binding += "}\n\n"
+    return fn_signature + fn_binding
 
-    with open(bindings_header_path, "a") as f:
-        if fn_signature not in header_content:
-            f.write(fn_signature)
-        if fn_binding not in header_content:
-            f.write(fn_binding)
+def _parse_bindings_header(content):
+    preamble_match = re.match(r'(?P<preamble>.*?)(?=extern "C" void launch_|\Z)', content, re.DOTALL)
+    preamble = preamble_match.group("preamble") if preamble_match else _default_bindings_header()
+    if not preamble.strip():
+        preamble = _default_bindings_header()
 
-    # Pybind module
+    block_pattern = re.compile(
+        r'extern "C" void launch_(?P<name>\w+)_kernel\s*\('
+        r'(?P<c_params>.*?)'
+        r'\);\s*'
+        r'void (?P=name)_binding\s*\('
+        r'(?P<binding_params>.*?)'
+        r'\)\s*\{'
+        r'(?P<body>.*?)'
+        r'\n\}\s*',
+        re.DOTALL,
+    )
+
+    ordered_names = []
+    bindings = {}
+    for match in block_pattern.finditer(content):
+        name = match.group("name")
+        ordered_names.append(name)
+        bindings[name] = {
+            "name": name,
+            "n_in": len(re.findall(r'\binput_\d+\b', match.group("c_params"))),
+            "n_out": len(re.findall(r'\boutput_\d+\b', match.group("c_params"))),
+            "block": match.group(0).strip() + "\n\n",
+        }
+
+    return preamble, ordered_names, bindings
+
+def _parse_bindings_cpp(content):
+    module_pattern = re.compile(r'm\.def\("(?P<name>\w+)", &(?P=name)_binding\);')
+    return [match.group("name") for match in module_pattern.finditer(content)]
+
+def _ordered_unique(names):
+    seen = set()
+    ordered = []
+    for name in names:
+        if name not in seen:
+            ordered.append(name)
+            seen.add(name)
+    return ordered
+
+def _render_bindings_header(preamble, names, bindings):
+    header = preamble.rstrip() + "\n\n"
+    for name in names:
+        if name in bindings:
+            header += bindings[name]["block"]
+    return header.rstrip() + "\n"
+
+def _render_bindings_cpp(names):
+    lines = ['#include "bindings.h"', "", "PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {", ""]
+    for name in names:
+        lines.append(f'    m.def("{name}", &{name}_binding);')
+    lines.append("")
+    lines.append("}")
+    lines.append("")
+    return "\n".join(lines)
+
+def pybind_codegen(f, precision):
+    """Generate Python bindings for the CasADi function."""
+    f_name = f.name()
+    n_in = f.n_in()
+    n_out = f.n_out()
+    kernel_names = set(get_codegen_kernel_names())
+    bindings_header_path = os.path.join(CODEGEN_DIR, "bindings.h")
     bindings_cpp_path = os.path.join(CODEGEN_DIR, "bindings.cpp")
-    with open(bindings_cpp_path, "r") as f:
-        cpp_content = f.read()
-    module_header = "PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {\n"
+    header_content = _default_bindings_header()
+    if os.path.exists(bindings_header_path):
+        with open(bindings_header_path, "r") as header_file:
+            header_content = header_file.read()
 
-    def find_line_number(file, search_string):
-        with open(file, "r") as f:
-            for index, line in enumerate(f):
-                if search_string in line:
-                    return index
-                    break
-        return -1
+    cpp_content = _default_bindings_cpp()
+    if os.path.exists(bindings_cpp_path):
+        with open(bindings_cpp_path, "r") as cpp_file:
+            cpp_content = cpp_file.read()
 
-    line_number = find_line_number(bindings_cpp_path, module_header)
-    module_code = f"\n    m.def(\"{f_name}\", &{f_name}_binding);"
-    if module_code not in cpp_content:
-        cpp_content = cpp_content.splitlines(keepends=True)
-        cpp_content.insert(line_number+1, module_code)
-        with open(bindings_cpp_path, "w") as f:
-                f.writelines(cpp_content)
+    preamble, header_order, header_bindings = _parse_bindings_header(header_content)
+    cpp_order = _parse_bindings_cpp(cpp_content)
+
+    header_bindings = {
+        name: binding for name, binding in header_bindings.items() if name in kernel_names
+    }
+
+    if f_name in kernel_names:
+        current_binding = header_bindings.get(f_name)
+        if current_binding is None or current_binding["n_in"] != n_in or current_binding["n_out"] != n_out:
+            header_bindings[f_name] = {
+                "name": f_name,
+                "n_in": n_in,
+                "n_out": n_out,
+                "block": _generate_header_binding_block(f_name, n_in, n_out, precision),
+            }
+
+    ordered_names = _ordered_unique(
+        [name for name in cpp_order if name in kernel_names]
+        + [name for name in header_order if name in kernel_names]
+        + ([f_name] if f_name in kernel_names else [])
+    )
+
+    header_names = [name for name in ordered_names if name in header_bindings]
+    header_output = _render_bindings_header(preamble, header_names, header_bindings)
+    with open(bindings_header_path, "w") as header_file:
+        header_file.write(header_output)
+
+    cpp_names = [name for name in header_names if name in kernel_names]
+    cpp_output = _render_bindings_cpp(cpp_names)
+    with open(bindings_cpp_path, "w") as cpp_file:
+        cpp_file.write(cpp_output)
+
+    return cpp_names
 
 
 # # TODO: return time taken here too

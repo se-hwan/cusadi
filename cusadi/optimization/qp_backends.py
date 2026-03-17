@@ -9,6 +9,7 @@ from cusadi.parallelization import CusadiFunction
 
 @dataclass
 class CudssData:
+    n_envs: int
     interface: object
     Ap: torch.Tensor
     Ai: torch.Tensor
@@ -47,6 +48,29 @@ class QPBackend(ABC):
                     dynamic_batching):
         pass
 
+    def build_parallelized_functions(self,
+                              linsys_method,
+                              batch_size=4096,
+                              precision='float',
+                              dynamic_batching=True):
+        # Codegen functions
+        from cusadi.parallelization import codegen_functions
+        parallel_fns = self.build_parallel_fns(linsys_method)
+        self.linsys_method = linsys_method
+        codegen_functions(
+            parallel_fns,
+            batch_size=batch_size,
+            precision=precision,
+            dynamic_batching=dynamic_batching
+        )
+        return parallel_fns
+
+    def compile_parallelized_functions(self, parallel_fns):
+        from cusadi.parallelization import compile_and_load_kernels
+        kernel_names = [fn.name() for fn in parallel_fns]
+        print(kernel_names)
+        compile_and_load_kernels(kernel_names)
+
     @abstractmethod
     def build_parallel_fns(self, linsys_method) -> list:
         pass
@@ -60,16 +84,12 @@ class QPBackend(ABC):
                      linsys_sparsity: ca.Sparsity,
                      n_envs: int,
                      precision: str):
-        print("Initializing cuDSS interface...")
+        # print("Initializing cuDSS interface...")
         # JIT compile and import cuDSS interface
-        from cusadi.parallelization.utils.jit_kernels import compile_and_load_cudss
-        compile_and_load_cudss()
-        print("Loaded cuDSS interface.")
-        import cudss
         try:
             from cusadi.parallelization.utils.jit_kernels import compile_and_load_cudss
             compile_and_load_cudss()
-            print("Loaded cuDSS interface.")
+            # print("Loaded cuDSS interface.")
             import cudss
         except:
             print("Could not compile cuDSS interface.")
@@ -122,6 +142,7 @@ class QPBackend(ABC):
             d_x[i] = x_cudss[i, :].data_ptr()
 
         self.cudss_data = CudssData(
+            n_envs=n_envs,
             interface=self.cudss_interface,
             Ap=Ap_cudss,
             Ai=Ai_cudss,
@@ -158,16 +179,17 @@ class QPBackend(ABC):
 class OSQPBackend(QPBackend):
     # OSQP default settings
     osqp_cfg = {
-        "rho": 0.01,
+        "rho": 0.1,
         "verbose": False,
         "adaptive_rho": True,
         "max_iter": 25,
-        "scaling": 10,
-        "check_termination": 50,
+        "scaling": 2,
+        "check_termination": 25,
         "sigma": 1e-6,
         "alpha": 1.6,
-        "warm_starting": True
+        "warm_starting": False
         }
+    parallelization_ready: bool = False
 
     def __init__(self, opti_problem, qp_cfg=None):
         self.problem = opti_problem
@@ -175,6 +197,12 @@ class OSQPBackend(QPBackend):
         self.osqp_cfg.update(qp_cfg)
         self.qp_setup = False
         self.solver = osqp.OSQP()
+
+        # Normalized rho vector in OSQP
+        self.rho_norm = np.ones(self.problem.n_g)
+        self.rho_norm[self.problem.eq_idx] = 1e3*self.rho_norm[self.problem.eq_idx]
+        self.rho_norm_inv = 1/self.rho_norm.copy()
+
         print("OSQP backend initialized")
 
     def setup(self, x_init=None, p_init=None):
@@ -265,6 +293,148 @@ class OSQPBackend(QPBackend):
                 'matrix_KKT': matrix_KKT}
 
     # ************** OSQP GPU PARALLELIZATION FUNCTIONS ****************** #
+    def solve_parallelized(self, x_eval, p_eval, kkt_params=None):
+        if not self.parallelization_ready:
+            raise ModuleNotFoundError("Call .parallelize() before attempting parallel solve")
+        
+        # ! Check if batch size of inputs matches batch size of auxiliary tensors
+        # ! If not, rebuild auxiliary tensors and cuDSS interface as needed
+        input_batch_size = x_eval.shape[0]
+        if input_batch_size != self.gpu_x_k.shape[0]:
+            self._setup_auxiliary_tensors(input_batch_size, self.gpu_x_k.dtype)
+            if self.linsys_method == 'cudss':
+                sparsity_KKT = self.gpu_fn_scaling.fn_casadi.sparsity_out(0)
+                self._setup_cudss_interface(sparsity_KKT, input_batch_size, self.solver_precision)
+
+        if kkt_params is not None:
+            self.rho_tensor = kkt_params['rho']
+            self.sigma_tensor = kkt_params['sigma']
+            self.alpha_tensor = kkt_params['alpha']
+
+        self.gpu_x_k.zero_()
+        self.gpu_y_k.zero_()
+        self.gpu_z_k.zero_()
+        [A_KKT] = self.gpu_fn_KKT.evaluate([x_eval, p_eval])
+        [A_KKT_scaled_triu, q_scaled, D_scaled, lb_scaled, ub_scaled] = \
+            self.gpu_fn_scaling.evaluate(
+                [A_KKT, x_eval, p_eval, self.sigma_tensor, self.rho_tensor])
+        
+        if self.linsys_method == 'cudss':
+            self.cudss_data.Ax[:, :] = A_KKT_scaled_triu
+            self.cudss_data.interface.factorizeNumeric()
+        elif self.linsys_method == 'ldl':
+            [D_ldl, L_ldl, _] = self.gpu_fn_ldl_fac.evaluate([A_KKT_scaled_triu])
+        for _ in range(self.osqp_cfg['max_iter']):
+            [b_KKT] = self.gpu_fn_KKT_vector.evaluate([q_scaled,
+                                                        self.gpu_x_k,
+                                                        self.gpu_y_k,
+                                                        self.gpu_z_k,
+                                                        self.sigma_tensor,
+                                                        self.rho_tensor])
+            if self.linsys_method == 'cudss':
+                self.cudss_data.b[:, :] = b_KKT
+                self.cudss_data.interface.solveLinearSystem()
+                soln_KKT = self.cudss_data.x.clone()
+            elif self.linsys_method == 'ldl':
+                [soln_KKT] = self.gpu_fn_ldl_solve.evaluate([b_KKT, D_ldl, L_ldl])
+            [x_next, y_next, z_next] = self.gpu_fn_ADMM_step.evaluate([
+                soln_KKT,
+                self.gpu_x_k,
+                self.gpu_y_k,
+                self.gpu_z_k,
+                lb_scaled,
+                ub_scaled,
+                self.alpha_tensor,
+                self.rho_tensor])
+            self.gpu_x_k[:, :] = x_next
+            self.gpu_y_k[:, :] = y_next
+            self.gpu_z_k[:, :] = z_next
+        return D_scaled * self.gpu_x_k
+
+    def parallelize(self,
+                    linsys_method,
+                    batch_size=4096,
+                    precision='float',
+                    dynamic_batching=True):
+        self.setup_parallelization(linsys_method,
+                                   batch_size,
+                                   precision,
+                                   dynamic_batching)
+        self.compile_parallelized_functions(self.parallel_fns)
+        self.load_parallelized_functions(linsys_method,
+                                       batch_size,
+                                       precision,
+                                       dynamic_batching)
+        return self.cusadi_fns
+
+    def load_parallelized_functions(self,
+                                  linsys_method,
+                                  batch_size,
+                                  precision,
+                                  dynamic_batching):
+        self.cusadi_fns = {}
+        for fn in self.parallel_fns:
+            self.cusadi_fns[fn.name()] = CusadiFunction(fn,
+                                                        batch_size,
+                                                        precision,
+                                                        dynamic_batching)
+        # Store functions to be used in GPU-parallized solves
+        self.gpu_fn_KKT = self.cusadi_fns[f"KKT_matrix_{self.problem.name}"]
+        self.gpu_fn_scaling = self.cusadi_fns[f"ruiz_scaling_{self.problem.name}"]
+        self.gpu_fn_KKT_vector = self.cusadi_fns[f"KKT_vector_{self.problem.name}"]
+        self.gpu_fn_ADMM_step = self.cusadi_fns[f"ADMM_step_{self.problem.name}"]
+        
+        if linsys_method == "cudss":
+            sparsity_KKT = self.gpu_fn_scaling.fn_casadi.sparsity_out(0)
+            self._setup_cudss_interface(sparsity_KKT, batch_size, precision)
+        elif linsys_method == "ldl":
+            self.gpu_fn_ldl_fac = self.cusadi_fns[f"ldl_factorize_{self.problem.name}"]
+            self.gpu_fn_ldl_solve = self.cusadi_fns[f"ldl_solve_{self.problem.name}"]
+        else:
+            raise ValueError(f"Unknown linsys method: {linsys_method}")
+        self.parallelization_ready = True
+        return self.cusadi_fns
+
+    def setup_parallelization(self,
+                              linsys_method,
+                              batch_size=4096,
+                              precision='float',
+                              dynamic_batching=True):
+        self.solver_precision = precision
+        self.linsys_method = linsys_method
+
+        # Instantiate variables for GPU solves
+        torch_precision = torch.float if precision == 'float' else torch.double
+        self._setup_auxiliary_tensors(batch_size, torch_precision)
+
+        # Codegen functions
+        self.parallel_fns = super().build_parallelized_functions(
+            linsys_method,
+            batch_size,
+            precision,
+            dynamic_batching)
+        return self.parallel_fns
+
+    def _setup_auxiliary_tensors(self, batch_size, torch_precision):
+        self.gpu_x_k = torch.zeros(batch_size,
+                                   self.problem.n_x,
+                                   device='cuda',
+                                   dtype=torch_precision)
+        self.gpu_y_k = torch.zeros(batch_size,
+                                   self.problem.n_g,
+                                   device='cuda',
+                                   dtype=torch_precision)
+        self.gpu_z_k = torch.zeros(batch_size,
+                                   self.problem.n_g,
+                                   device='cuda',
+                                   dtype=torch_precision)
+        self.rho_tensor = self.osqp_cfg['rho'] \
+            * torch.ones(batch_size, 1, dtype=torch_precision, device='cuda')
+        self.sigma_tensor = self.osqp_cfg['sigma'] \
+            * torch.ones(batch_size, 1, dtype=torch_precision, device='cuda')
+        self.alpha_tensor = self.osqp_cfg['alpha'] \
+            * torch.ones(batch_size, 1, dtype=torch_precision, device='cuda')
+
     def build_parallel_fns(self, linsys_method):
         self.linsys_method = linsys_method
         qp_sym = self._unpack_symbolics(self.problem.opti)
@@ -314,6 +484,7 @@ class OSQPBackend(QPBackend):
     def compute_ruiz_scaling(self, x, p, c, z_lb, z_ub, kkt_sparsity):
         n_sys = self.problem.n_sys
         n_x = self.problem.n_x
+        n_g = self.problem.n_g
         rho_norm_inv = self.problem.rho_norm_inv
 
         kkt_triu_sparsity = ca.triu(kkt_sparsity)
@@ -322,31 +493,34 @@ class OSQPBackend(QPBackend):
         sigma = ca.MX.sym("sigma", 1, 1)
         rho_bar = ca.MX.sym("rho_bar", 1, 1)
 
-        S_scale = ca.MX.eye(n_sys)
-        c_scale = 1
-
         P_kkt = kkt_sym[:n_x, :n_x]
         A_kkt = kkt_sym[n_x:, :n_x]
         P_bar = kkt_sym[:n_x, :n_x]
         A_bar = kkt_sym[n_x:, :n_x]
         q_bar = c
-        M_bar = ca.MX(n_sys, n_sys)
-        M_bar[:n_x, :n_x] = P_bar
-        M_bar[n_x:, :n_x] = A_bar
-        M_bar[:n_x, n_x:] = A_bar.T
-        delta = ca.MX.ones(n_sys, 1)
+        x_scale = ca.MX.ones(n_x, 1)
+        g_scale = ca.MX.ones(n_g, 1)
+        c_scale = 1
+
+        def _safe_inv_sqrt(max_entry):
+            denom = ca.sqrt(max_entry)
+            return ca.if_else(denom <= 0, 1, 1 / denom)
 
         for _ in range(self.osqp_cfg['scaling']):
-            for j in range(n_sys):
-                M_j_inf = ca.mmax(ca.fabs(M_bar[:, j]))
-                denom = ca.sqrt(M_j_inf)
-                delta[j] = ca.if_else(denom <= 0, 1, 1 / denom)
+            delta_x = ca.MX.ones(n_x, 1)
+            delta_g = ca.MX.ones(n_g, 1)
 
-            D = ca.diag(delta[:n_x])
-            E = ca.diag(delta[n_x:])
-            P_bar = D @ P_bar @ D
-            A_bar = E @ A_bar @ D
-            q_bar = D @ q_bar
+            for j in range(n_x):
+                primal_col = ca.vertcat(P_bar[:, j], A_bar[:, j])
+                delta_x[j] = _safe_inv_sqrt(ca.mmax(ca.fabs(primal_col)))
+
+            for j in range(n_g):
+                dual_col = A_bar[j, :].T
+                delta_g[j] = _safe_inv_sqrt(ca.mmax(ca.fabs(dual_col)))
+
+            P_bar = ca.repmat(delta_x, 1, n_x) * P_bar * ca.repmat(delta_x.T, n_x, 1)
+            A_bar = ca.repmat(delta_g, 1, n_x) * A_bar * ca.repmat(delta_x.T, n_g, 1)
+            q_bar = delta_x * q_bar
 
             P_bar_sum = 0
             for j in range(n_x):
@@ -356,20 +530,17 @@ class OSQPBackend(QPBackend):
             gamma = 1 / ca.fmax(P_bar_inf, q_bar_inf)
             P_bar = gamma * P_bar
             q_bar = gamma * q_bar
-            S_scale = ca.diag(delta) @ S_scale
+            x_scale = x_scale * delta_x
+            g_scale = g_scale * delta_g
             c_scale = gamma * c_scale
-            M_bar[:n_x, :n_x] = P_bar
-            M_bar[n_x:, :n_x] = A_bar
-            M_bar[:n_x, n_x:] = A_bar.T
 
-        S_scale = ca.diag(S_scale)
-        D_scale = ca.diag(S_scale[:n_x])
-        E_scale = ca.diag(S_scale[n_x:])
-        P_scaled = c_scale * D_scale @ P_kkt @ D_scale
-        A_scaled = E_scale @ A_kkt @ D_scale
-        q_scaled = c_scale * D_scale @ c
-        z_lb_scaled = E_scale @ z_lb
-        z_ub_scaled = E_scale @ z_ub
+        P_scaled = c_scale * (
+            ca.repmat(x_scale, 1, n_x) * P_kkt * ca.repmat(x_scale.T, n_x, 1)
+        )
+        A_scaled = ca.repmat(g_scale, 1, n_x) * A_kkt * ca.repmat(x_scale.T, n_g, 1)
+        q_scaled = c_scale * x_scale * c
+        z_lb_scaled = g_scale * z_lb
+        z_ub_scaled = g_scale * z_ub
 
         kkt_scaled = ca.MX(n_sys, n_sys)
         kkt_scaled[:n_x, :n_x] = P_scaled + sigma * ca.MX.eye(n_x)
@@ -380,9 +551,9 @@ class OSQPBackend(QPBackend):
 
         return ca.Function(
             f"ruiz_scaling_{self.problem.name}",
-            [x, p, kkt_nz, sigma, rho_bar],
-            [kkt_scaled_triu, q_scaled, D_scale, z_lb_scaled, z_ub_scaled],
-            ["x", "p", "kkt_nz", "sigma", "rho_bar"],
+            [kkt_nz, x, p, sigma, rho_bar],
+            [kkt_scaled_triu, q_scaled, x_scale, z_lb_scaled, z_ub_scaled],
+            ["kkt_nz", "x", "p", "sigma", "rho_bar"],
             ["kkt_scaled_triu", "q_scaled", "D_scale", "z_lb_scaled", "z_ub_scaled"],
             self.problem.fn_opts,
         )
@@ -392,7 +563,7 @@ class OSQPBackend(QPBackend):
         n_x = self.problem.n_x
         n_g = self.problem.n_g
         rho_norm = self.problem.rho_norm
-        rho_norm_inv = self.problem.rho_norm_inv
+        rho_norm_inv = 1/rho_norm.copy()
 
         x_solve = ca.MX.sym("x_solve", n_sys, 1)
         x_k = ca.MX.sym("x_k", n_x, 1)
@@ -439,21 +610,15 @@ class OSQPBackend(QPBackend):
             self.problem.fn_opts,
         )
     
-    def compute_LDL_functions(self, kkt_sparsity):
-        kkt_sparsity_triu = ca.triu(kkt_sparsity)
-        kkt_vec = ca.SX.sym('kkt_vec', kkt_sparsity.shape[0], 1)
-        kkt_nz = ca.SX.sym("kkt_nz", kkt_sparsity.nnz(), 1)
-        kkt_mat = ca.triu2symm(ca.triu(ca.SX(kkt_sparsity, kkt_nz)))
+    def compute_LDL_functions(self, kkt_sparsity_triu):
+        kkt_vec = ca.SX.sym('kkt_vec', kkt_sparsity_triu.shape[0], 1)
+        kkt_nz = ca.SX.sym("kkt_nz", kkt_sparsity_triu.nnz(), 1)
+        kkt_mat = ca.triu2symm(ca.SX(kkt_sparsity_triu, kkt_nz))
         [D, L, perm] = ca.ldl(kkt_mat, True)
         D_sym = ca.SX.sym('D_sym', D.nnz(), 1)
         L_sym = ca.SX.sym('L_sym', L.nnz(), 1)
         D_mat = ca.SX(D.sparsity(), D_sym)
         L_mat = ca.SX(L.sparsity(), L_sym)
-        print(D.shape)
-        print(D_mat.shape)
-        print(L.shape)
-        print(L_mat.shape)
-        print(L_sym.sparsity().shape)
         kkt_soln = ca.ldl_solve(kkt_vec, D_mat, L_mat, perm)
         fn_fac = ca.Function(
             f"ldl_factorize_{self.problem.name}",
@@ -479,10 +644,10 @@ class OSQPBackend(QPBackend):
 
 class RelaxedLogBackend(QPBackend):
     relaxed_log_cfg = {
-        "alpha": 1.0,
-        "max_iter": 5,
+        "alpha": 0.5,
+        "max_iter": 20,
     }
-    parallelized: bool = False
+    parallelization_ready: bool = False
     cusadi_fns: dict[str, CusadiFunction] = {}
 
     def __init__(self, problem, qp_cfg=None):
@@ -495,53 +660,106 @@ class RelaxedLogBackend(QPBackend):
             return self.fn_relaxed_log_soln(x_init, p_init)
 
     def solve_step(self, x_eval, p_eval, solve_method=None):
-        dx = np.zeros((x_eval.shape[0], 1))
-        if solve_method == "custom":
-            raise ValueError("Only symbolic casadi LDL solver available.")
-        return self.fn_relaxed_log_soln(x_eval, p_eval)
+        dim_x = x_eval.shape[0]
+        dx_soln = np.zeros_like(x_eval)
+        A_KKT, b_KKT = self.fn_relaxed_log_KKT(dx_soln, x_eval, p_eval)
+        D_KKT, L_KKT = self.fn_relaxed_log_LDL_fac(x_eval, p_eval)
+        for _ in range(self.relaxed_log_cfg['max_iter']):
+            soln_KKT = self.fn_relaxed_log_LDL_solve(b_KKT, D_KKT, L_KKT.nonzeros())
+            dx_soln += self.relaxed_log_cfg["alpha"] * soln_KKT[:dim_x]
+            _, b_KKT = self.fn_relaxed_log_KKT(dx_soln, x_eval, p_eval)
+        return dx_soln.toarray().reshape(dim_x, 1)
+        # soln = np.array(self.fn_relaxed_log_soln(x_eval, p_eval))
+        # return soln.reshape(x_eval.shape[0], 1)
 
     def solve_parallelized(self, x_eval, p_eval):
         dim_x = x_eval.shape[1]
-        if not self.parallelized:
+        if not self.parallelization_ready:
             raise ModuleNotFoundError("Call .parallelize() before attempting parallel solve")
 
+        input_batch_size = x_eval.shape[0]
+        if input_batch_size != self.batch_size:
+            if self.linsys_method == 'cudss':
+                fn_KKT = self.cusadi_fns[f"relaxed_log_KKT_{self.problem.name}"].fn_casadi
+                sparsity_KKT = fn_KKT.sparsity_out(0)
+                self._setup_cudss_interface(sparsity_KKT, input_batch_size, self.solver_precision)
+                self.batch_size = input_batch_size
+
+        dx_soln = torch.zeros_like(x_eval)
+        fn_KKT = self.cusadi_fns[f"relaxed_log_KKT_{self.problem.name}"]
+        [A_KKT, b_KKT] = fn_KKT.evaluate([dx_soln, x_eval, p_eval])
         if self.linsys_method == 'cudss':
-            dx_soln = torch.zeros_like(x_eval)
-            fn_KKT = self.cusadi_fns[f"relaxed_log_KKT_{self.problem.name}"]
-            [A_KKT, b_KKT] = fn_KKT.evaluate([dx_soln, x_eval, p_eval])
             self.cudss_data.Ax[:, :] = A_KKT
             self.cudss_data.b[:, :] = b_KKT
             self.cudss_data.interface.factorizeNumeric()
-            for _ in range(self.relaxed_log_cfg['max_iter']):
+        elif self.linsys_method == 'ldl':
+            fn_LDL = self.cusadi_fns[f"relaxed_log_KKT_fac_{self.problem.name}"]
+            [D, L] = fn_LDL.evaluate([x_eval, p_eval])
+        for _ in range(self.relaxed_log_cfg['max_iter']):
+            if self.linsys_method == 'cudss':
                 self.cudss_data.interface.solveLinearSystem()
                 soln_KKT = self.cudss_data.x[:, :]
-                dx_soln += self.relaxed_log_cfg["alpha"] * soln_KKT[:, :dim_x]
-                [_, b_KKT] = fn_KKT.evaluate([dx_soln, x_eval, p_eval])
+            elif self.linsys_method == 'ldl':
+                fn_solve = self.cusadi_fns[f"relaxed_log_KKT_solve_{self.problem.name}"]
+                [soln_KKT] = fn_solve.evaluate([b_KKT, D, L])
+            dx_soln += self.relaxed_log_cfg["alpha"] * soln_KKT[:, :dim_x]
+            [_, b_KKT] = fn_KKT.evaluate([dx_soln, x_eval, p_eval])
+            if self.linsys_method == 'cudss':
                 self.cudss_data.b[:, :] = b_KKT
-            return dx_soln
-        
-        elif self.linsys_method == 'ldl':
-            fn_eval = self.cusadi_fns[f'relaxed_log_soln_{self.problem.name}']
-            return fn_eval.evaluate([x_eval, p_eval])[0] # dx solution to QP
+        return dx_soln
 
     def parallelize(self,
                     linsys_method,
                     batch_size=4096,
                     precision='float',
                     dynamic_batching=True):
-        from cusadi.parallelization import parallelize_functions
-        solver_fns = self.build_parallel_fns(linsys_method)
-        self.cusadi_fns = parallelize_functions(solver_fns,
-                                                batch_size=batch_size,
-                                                precision=precision,
-                                                dynamic_batching=dynamic_batching)
+        self.setup_parallelization(linsys_method,
+                                   batch_size,
+                                   precision,
+                                   dynamic_batching)
+        self.compile_parallelized_functions(self.parallel_fns)
+        self.load_parallelized_functions(linsys_method,
+                                       batch_size,
+                                       precision,
+                                       dynamic_batching)
+        return self.cusadi_fns
+
+    def setup_parallelization(self,
+                              linsys_method,
+                              batch_size,
+                              precision,
+                              dynamic_batching):
+        self.precision = precision
+        self.linsys_method = linsys_method
+        self.batch_size = batch_size
+        self.solver_precision = precision
+
+        # Codegen functions
+        self.parallel_fns = super().build_parallelized_functions(
+            linsys_method,
+            batch_size,
+            precision,
+            dynamic_batching)
+        return self.parallel_fns
+
+    def load_parallelized_functions(self,
+                                  linsys_method,
+                                  batch_size,
+                                  precision,
+                                  dynamic_batching):
+        self.cusadi_fns = {}
+        for fn in self.parallel_fns:
+            self.cusadi_fns[fn.name()] = CusadiFunction(fn,
+                                                        batch_size,
+                                                        precision,
+                                                        dynamic_batching)
         # Setup cudss interface with KKT sparsity pattern
         if linsys_method == "cudss":
             fn_KKT = self.cusadi_fns[f"relaxed_log_KKT_{self.problem.name}"].fn_casadi
             sparsity_KKT = fn_KKT.sparsity_out(0)
             self._setup_cudss_interface(sparsity_KKT, batch_size, precision)
-        self.linsys_method = linsys_method
-        self.parallelized = True
+        self.parallelization_ready = True
+        return self.cusadi_fns
 
     def build_parallel_fns(self, linsys_method):
         self.linsys_method = linsys_method
@@ -550,7 +768,8 @@ class RelaxedLogBackend(QPBackend):
             self._build_qp_functions()
         parallel_fns = [self.fn_relaxed_log_KKT]
         if linsys_method == 'ldl':
-            parallel_fns = [self.fn_relaxed_log_soln]
+            parallel_fns.append(self.fn_relaxed_log_LDL_fac)
+            parallel_fns.append(self.fn_relaxed_log_LDL_solve)
         elif linsys_method == 'cudss':
             print('cuDSS linear solver chosen. No CusADi functions generated.')
         else:
@@ -572,7 +791,7 @@ class RelaxedLogBackend(QPBackend):
         # Form relaxed barrier problem for inequality constraints
         dx = ca.MX.sym("dx", dim_x, 1)
         ineq_barrier = self._relaxed_barrier(x=(A_ineq @ dx - b_ineq),
-                                                mu=0.2,
+                                                mu=0.05,
                                                 delta=0.1)
         cost = 1/2 * dx.T @ P @ dx + c.T @ dx + ca.sum(ineq_barrier)
         P_newton, c_newton = ca.hessian(cost, dx)
@@ -581,13 +800,11 @@ class RelaxedLogBackend(QPBackend):
 
         # KKT system from equality constrained nonlinear problem
         print("Building Newton step function...")
-        matrix_KKT, vector_KKT = self._newton_step_KKT_system(P_newton,
-                                                              c_newton,
-                                                              A_newton,
-                                                              b_newton)
+        matrix_KKT_triu, matrix_KKT, vector_KKT = self._newton_step_KKT_system(
+            P_newton, c_newton, A_newton, b_newton)
         self.fn_relaxed_log_KKT = ca.Function(
             f"relaxed_log_KKT_{self.problem.name}",
-            [dx, x, p], [matrix_KKT, vector_KKT],
+            [dx, x, p], [matrix_KKT_triu, vector_KKT],
             ["dx", "x", "p"], ["matrix_KKT", "vector_KKT"],
             self.problem.fn_opts
         )
@@ -599,23 +816,44 @@ class RelaxedLogBackend(QPBackend):
         p_init = ca.SX.sym('p_LDL', p.shape[0], 1)
         x_soln = ca.SX(dim_x, 1)
         # ! A_KKT doesn't change between QP iterations, not increasing mu
-        A_KKT, b_KKT = self.fn_relaxed_log_KKT(x_soln, x_init, p_init)
+        A_KKT_triu, b_KKT = self.fn_relaxed_log_KKT(x_soln, x_init, p_init)
+        A_KKT = ca.triu2symm(A_KKT_triu)
         D, L, perm = ca.ldl(A_KKT, True)
-        for _ in range(self.relaxed_log_cfg['max_iter']):
-            soln_KKT = ca.ldl_solve(b_KKT, D, L, perm)
-            x_soln += self.relaxed_log_cfg["alpha"] * soln_KKT[:dim_x]
-            _, b_KKT = self.fn_relaxed_log_KKT(x_soln, x_init, p_init)
 
-        self.fn_relaxed_log_soln = ca.Function(
-            f"relaxed_log_soln_{self.problem.name}",
-            [x_init, p_init], [x_soln],
-            ["x", "p"], ["x_soln"],
-            # [dx_init, x_init, p_init], [x_soln],
-            # ["dx", "x", "p"], ["x_soln"],
+        self.fn_relaxed_log_LDL_fac = ca.Function(
+            f"relaxed_log_KKT_fac_{self.problem.name}",
+            [x_init, p_init], [D, L],
+            ["x", "p"], ["D", "L"],
             self.problem.fn_opts
         )
+
+        b_sym = ca.SX.sym('b_sym', b_KKT.nnz(), 1)
+        D_sym = ca.SX.sym('D_sym', D.nnz(), 1)
+        L_sym = ca.SX.sym('L_sym', L.nnz(), 1)
+        D_mat = ca.SX(D.sparsity(), D_sym)
+        L_mat = ca.SX(L.sparsity(), L_sym)
+        soln_KKT = ca.ldl_solve(b_sym, D_mat, L_mat, perm)
+
+        self.fn_relaxed_log_LDL_solve = ca.Function(
+            f"relaxed_log_KKT_solve_{self.problem.name}",
+            [b_sym, D_sym, L_sym], [soln_KKT],
+            ["b", "D", "L"], ["soln_KKT"],
+            self.problem.fn_opts
+        )
+
+        # for _ in range(self.relaxed_log_cfg['max_iter']):
+        #     soln_KKT = ca.ldl_solve(b_KKT, D, L, perm)
+        #     x_soln += self.relaxed_log_cfg["alpha"] * soln_KKT[:dim_x]
+        #     _, b_KKT = self.fn_relaxed_log_KKT(x_soln, x_init, p_init)
+        # self.fn_relaxed_log_soln = ca.Function(
+        #     f"relaxed_log_soln_{self.problem.name}",
+        #     [x_init, p_init], [x_soln],
+        #     ["x", "p"], ["x_soln"],
+        #     self.problem.fn_opts
+        # )
         print(f"Relaxed Log KKT function: {self.fn_relaxed_log_KKT.n_instructions()} instr.")
-        print(f"Relaxed Log iterations function: {self.fn_relaxed_log_soln.n_instructions()} instr.")
+        print(f"Relaxed Log iterations function: {self.fn_relaxed_log_LDL_fac.n_instructions()} instr.")
+        print(f"Relaxed Log iterations function: {self.fn_relaxed_log_LDL_solve.n_instructions()} instr.")
 
     def _newton_step_KKT_system(self, P, c, A, b):
         dim_x = P.shape[0]
@@ -624,9 +862,10 @@ class RelaxedLogBackend(QPBackend):
         A_KKT[:dim_x, :dim_x] = P
         A_KKT[:dim_x, dim_x:] = A.T
         A_KKT[dim_x:, :dim_x] = A
-        A_KKT += 1e-8 * ca.MX.eye(dim_x + dim_g)
+        A_KKT += 1e-6 * ca.MX.eye(dim_x + dim_g)
+        A_KKT_triu = ca.triu(A_KKT)
         b_KKT = ca.vertcat(-c, b)
-        return A_KKT, b_KKT
+        return A_KKT_triu, A_KKT, b_KKT
 
     def _relaxed_barrier(self, x, mu=0.02, delta=0.1):
         log_barrier = -mu * ca.log(-x + 1e-8)

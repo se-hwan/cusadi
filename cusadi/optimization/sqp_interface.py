@@ -40,8 +40,9 @@ class SQPInterface:
                     batch_size=4096,
                     precision='float',
                     dynamic_batching=True):
-        self.qp_backend.parallelize(
+        cusadi_fns = self.qp_backend.parallelize(
             linsys_method, batch_size, precision, dynamic_batching)
+        return cusadi_fns
 
     def _setup_qp_backend(self, problem, qp_cfg,  x_init, p_init):
         if self.qp_solver == "osqp":

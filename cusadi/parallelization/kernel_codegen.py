@@ -50,7 +50,7 @@ def cuda_codegen(f, batch_size, precision, dynamic_batching):
     codegen_string = ""
     codegen_string += get_cuda_header(f)
     codegen_string += get_kernel(f, batch_size, precision, dynamic_batching)
-    codegen_string += get_c_interface(f)
+    codegen_string += get_c_interface(f, precision)
     codegen_file.write(codegen_string)
     codegen_file.close()
 
@@ -165,17 +165,17 @@ def get_kernel(f, batch_size, precision, dynamic_batching):
     
     return str_kernel
 
-def get_c_interface(f):
+def get_c_interface(f, precision):
     f_name = f.name()
     n_in = f.n_in()
     n_out = f.n_out()
     str_c_interface = f"extern \"C\" void launch_{f_name}_kernel (\n"
     str_c_interface += "        const int batch_size,\n"
     for i in range(n_in):
-        str_c_interface += f"        const float* input_{i},\n"
+        str_c_interface += f"        const {precision}* input_{i},\n"
     for i in range(n_out):
-        str_c_interface += f"        float* output_{i},\n"
-    str_c_interface += "        float* work) {\n"
+        str_c_interface += f"        {precision}* output_{i},\n"
+    str_c_interface += f"        {precision}* work) {{\n"
     str_c_interface += "    int block_size = 32;\n"
     str_c_interface += "    int grid = (batch_size + block_size - 1) / block_size;\n"
     str_c_interface += f"    evaluate_{f_name}<<<grid, block_size>>>(\n"
@@ -198,10 +198,10 @@ def _generate_header_binding_block(f_name, n_in, n_out, precision):
     fn_signature = f"extern \"C\" void launch_{f_name}_kernel(\n"
     fn_signature += "    const int batch_size,\n"
     for i in range(n_in):
-        fn_signature += f"    const float* input_{i},\n"
+        fn_signature += f"    const {precision}* input_{i},\n"
     for i in range(n_out):
-        fn_signature += f"    float* output_{i},\n"
-    fn_signature += "    float* work);\n\n"
+        fn_signature += f"    {precision}* output_{i},\n"
+    fn_signature += f"    {precision}* work);\n\n"
 
     fn_binding = f"void {f_name}_binding(\n"
     fn_binding += "    const int batch_size,\n"

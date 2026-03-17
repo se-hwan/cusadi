@@ -3,7 +3,7 @@ import json
 import hashlib
 import importlib
 import casadi as ca
-from cusadi.parallelization import CusadiFunction
+from .cusadi_function import CusadiFunction
 from .kernel_codegen import (
     build_kernel,
     build_pybind,
@@ -86,8 +86,11 @@ def _has_loaded_kernel_bindings(fn_names):
         return False
     return all(hasattr(module, fn_name) for fn_name in fn_names)
 
-def parallelize_functions(fns, batch_size=1,
-                          precision='float', dynamic_batching=True):
+
+def codegen_functions(fns,
+                      batch_size=1,
+                      precision='float',
+                      dynamic_batching=True):
     casadi_fns = []
     for fn in fns:
         if isinstance(fn, str):
@@ -118,6 +121,20 @@ def parallelize_functions(fns, batch_size=1,
     if manifest_updated:
         _save_codegen_manifest(manifest)
 
+    return casadi_fns, manifest_updated
+
+
+def parallelize_functions(fns,
+                          batch_size=1,
+                          precision='float',
+                          dynamic_batching=True):
+    casadi_fns, manifest_updated = codegen_functions(
+        fns,
+        batch_size=batch_size,
+        precision=precision,
+        dynamic_batching=dynamic_batching,
+    )
+
     kernel_names = get_codegen_kernel_names()
     requested_names = [fn.name() for fn in casadi_fns]
     if manifest_updated or not _has_loaded_kernel_bindings(requested_names):
@@ -127,5 +144,5 @@ def parallelize_functions(fns, batch_size=1,
 
     cusadi_fns = {}
     for fn in casadi_fns:
-        cusadi_fns[fn.name()] = CusadiFunction(fn, batch_size, precision)
+        cusadi_fns[fn.name()] = CusadiFunction(fn, batch_size, precision, dynamic_batching)
     return cusadi_fns

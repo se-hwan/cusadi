@@ -13,7 +13,7 @@ class IPOPTInterface:
 
     def solve(self, x_eval, params):
         self.opti.set_initial(self.opti.x, x_eval)
-        if params:
+        if params is not None:
             self.opti.set_value(self.opti.p, params)
         soln = self.opti.solve()
         return soln.value(self.opti.x)

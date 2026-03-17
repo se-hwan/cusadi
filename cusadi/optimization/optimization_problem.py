@@ -6,14 +6,22 @@ from dataclasses import dataclass
 from cusadi.utils.symbolic import *
 from .solver_registry import get_solver
 
+
+@dataclass
+class Variable:
+    sym: ca.SX | ca.MX
+    dim: tuple
+    idx: np.ndarray
+
 @dataclass
 class Parameter:
-    sym: ca.SX
+    sym: ca.SX | ca.MX
     dim: tuple
     dim_flat: int
     idx: np.ndarray
     init: np.ndarray
     init_vec: np.ndarray
+
 
 class OptimizationProblem:
     opti = ca.Opti()
@@ -89,11 +97,11 @@ class OptimizationProblem:
         idx_end = self.n_x + dim_1*dim_2
         self.n_x += dim_1*dim_2
 
-        self.variables[label] = {
-            'expr': opti_var,
-            'dim': (dim_1*dim_2),
-            'idx': np.arange(idx_start, idx_end)
-        }
+        self.variables[label] = Variable(
+            sym=opti_var,
+            dim=(dim_1*dim_2),
+            idx=np.arange(idx_start, idx_end)
+        )
         return opti_var
 
     def add_parameter(self, dim_1, dim_2, label, init_value=None):
@@ -187,9 +195,6 @@ class OptimizationProblem:
                             if v['ub'] for i in v['idx']]
         self.ineq_lb_idx = [i.item() for v in self.ineq_constraints.values()
                             if v['lb'] for i in v['idx']]
-        self.rho_norm = np.ones(self.n_g) # Normalized rho vector in OSQP
-        self.rho_norm[self.eq_idx] = 1e3*self.rho_norm[self.eq_idx]
-        self.rho_norm_inv = 1/self.rho_norm.copy()
         self.post_processed = True
 
     def build_parameter_yaml(self):
@@ -197,6 +202,8 @@ class OptimizationProblem:
             for name, param in self.parameters.items():
                 flat = param.init.flatten(order='F').tolist()
                 f.write(f"{name}: {flat}\n")
+
+    # TODO: Convenient parameter getting and setting from key/YAML
 
     # ------------------------  ANALYSIS  ----------------------------- #
     def plot_sparsity_patterns(self):
@@ -242,5 +249,6 @@ class OptimizationProblem:
         if not hasattr(self.solver, "parallelize"):
             raise AssertionError(f"GPU code-generation not available for {self.solver}.")
 
-        self.solver.parallelize(
+        cusadi_fns = self.solver.parallelize(
             linsys_method, batch_size, precision, dynamic_batching)
+        return cusadi_fns

@@ -93,17 +93,17 @@ class cudssInterface {
 
     ~cudssInterface() {
         if (matrices_are_allocated) {
-            printf("Cleaning up matrices in memory...\n");
+            // printf("Cleaning up matrices in memory...\n");
             cudssMatrixDestroy(A);
             cudssMatrixDestroy(x);
             cudssMatrixDestroy(b);
-            printf("Cleaned up matrices.\n");
+            // printf("Cleaned up matrices.\n");
         }
-        printf("Cleaning up objects in memory...\n");
+        // printf("Cleaning up objects in memory...\n");
         cudssConfigDestroy(solverConfig);
         cudssDataDestroy(handle_solver, solverData);
         cudssDestroy(handle_solver);
-        printf("Cleanup complete, all objects safely freed.\n");
+        // printf("Cleanup complete, all objects safely freed.\n");
     }
 
 

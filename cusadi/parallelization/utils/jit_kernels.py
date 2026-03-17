@@ -1,5 +1,7 @@
 import os
 import glob
+import sys
+import importlib
 import torch
 from torch.utils.cpp_extension import load
 
@@ -12,7 +14,7 @@ def compile_and_load_kernels(kernel_names):
     parallel_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     codegen_dir = os.path.join(parallel_dir, 'codegen')
     project_dir = os.path.dirname(os.path.dirname(parallel_dir))
-    build_dir = os.path.join(project_dir, 'build')
+    build_dir = os.path.join(project_dir, 'build_kernels')
     
     # Make build directory if it doesn't exist:
     if not os.path.exists(f"{build_dir}"):
@@ -20,22 +22,41 @@ def compile_and_load_kernels(kernel_names):
     print("Loading JIT kernels from: ", codegen_dir)
     print("Build directory: ", f"{build_dir}")
     
+    # # ! CLEAN UP
+    # CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+    # CODEGEN_DIR = os.path.join(os.path.dirname(CURRENT_DIR), "codegen")
+    # kernel_names = sorted(
+    #     os.path.splitext(filename)[0]
+    #     for filename in os.listdir(CODEGEN_DIR)
+    #     if filename.endswith(".cu")
+    # )
+    # print(kernel_names)
+    # # ! END CLEAN UP
+
     kernel_sources = []
-    for name in kernel_names:
+    for name in sorted(kernel_names):
         kernel_sources.append(os.path.join(codegen_dir, f'{name}.cu'))
     
     if len(kernel_sources) == 0:
         print("No kernel sources found. Skipping JIT compilation.")
+        return None
     else:
         kernel_sources.append(os.path.join(codegen_dir, 'bindings.cpp'))
-        load(name='cusadi_kernels',
-            sources=kernel_sources,
-            extra_cflags=['-O3', '-march=native'],
-            extra_cuda_cflags=['-O3', '--use_fast_math', '-arch=sm_86'],
-            verbose=True,
-            is_python_module=True,
-            build_directory=f"{project_dir}/build"
-        )
+        module = load(name='cusadi_kernels',
+                      sources=kernel_sources,
+                      extra_cflags=['-O3',
+                                    # '-march=native'
+                                    ],
+                      extra_cuda_cflags=['-O3', '--use_fast_math', '-arch=sm_86'],
+                      verbose=True,
+                      is_python_module=True,
+                      build_directory=f"{project_dir}/build_kernels"
+                      )
+        # # torch may bump the loaded name to cusadi_kernels_vN when inputs change.
+        # # Keep a stable alias so `import cusadi_kernels` always points to latest.
+        # sys.modules['cusadi_kernels'] = module
+        # importlib.invalidate_caches()
+        # return module
 
 def compile_and_load_cudss():
     if torch.cuda.is_available():
@@ -56,5 +77,5 @@ def compile_and_load_cudss():
          extra_ldflags=[f"-L{cuda_home}/lib64", "-lcudss"],
          verbose=True,
          is_python_module=True,
-         build_directory=f"{project_dir}/build"
+         build_directory=f"{project_dir}/build_cudss"
     )

@@ -13,7 +13,6 @@ class CusadiFunction:
     inputs_sparse = []
     outputs_sparse = []
     outputs_dense = []
-    precision = {}
 
     # Private variables:
     _device = 'cuda'
@@ -23,14 +22,22 @@ class CusadiFunction:
     output_tensors = []
 
     # ! Public methods:
-    def __init__(self, fn_casadi, batch_size, precision="float"):
+    def __init__(self, fn_casadi,
+                 batch_size: int,
+                 precision: str = "float",
+                 dynamic_batching: bool = True):
         assert torch.cuda.is_available()
+        # Instance-local containers (avoid cross-instance state bleed).
+        self.precision = {}
+        self.input_tensors = []
+        self.output_tensors = []
         self.fn_casadi = fn_casadi
         self.fn_name = fn_casadi.name()
         self.n_in = fn_casadi.n_in()
         self.n_out = fn_casadi.n_out()
         self.batch_size = batch_size
         self.n_instr = fn_casadi.n_instructions()
+        self.dynamic_batching = dynamic_batching
         if precision == 'float':
             self.precision['torch'] = torch.float
             self.precision['np'] = np.float32
@@ -54,12 +61,15 @@ class CusadiFunction:
                 print("Generate kernels before instantiating CusadiFunction.")
                 print("Call parallelize_functions([fn_name]) to generate kernels.")
                 raise SystemExit
-        print(f"Loaded CusADi function {self.fn_casadi.name()} with {self.n_instr} instructions.")
+        print(f"Loaded CusADi function {self.fn_casadi.name()} with {self.n_instr} instructions with precision {precision}.")
         print("Loaded library: ", self._fn_kernel)
         self._setup()
 
     def evaluate(self, inputs):
         self._clearTensors()
+        input_batch_size = inputs[0].shape[0]
+        if input_batch_size != self.batch_size:
+            self._resize_tensors(input_batch_size)
         self.input_tensors = [inputs[i].transpose(0, 1) for i in range(self.n_in)]
         self.eval_time = self._fn_kernel(self.batch_size,
                                          *self.input_tensors,
@@ -139,6 +149,14 @@ class CusadiFunction:
                                         device=self._device,
                                         dtype=self.precision['torch']).contiguous()
         
+    def _resize_tensors(self, new_batch_size: int):
+        if not self.dynamic_batching:
+            print("Dynamic batching must be true to resize cusadi function.")
+            print(f"Current batch size is {self.batch_size}, but inputs are {new_batch_size}.")
+            print(f"Recompile function with dynamic batching to give arbitrary size input batches.")
+            return AssertionError
+        self.batch_size = new_batch_size
+        self._setup()
 
     def _clearTensors(self):
         for i in range(self.n_out):

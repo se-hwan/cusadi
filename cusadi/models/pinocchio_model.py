@@ -42,57 +42,72 @@ class PinocchioModel(RobotModel):
         frame_ids, _ = self._parse_frame_labels(frames)
         self.end_eff_frame_ids = frame_ids
     
+    def get_frame_names(self):
+        names = []
+        for f in self.pin_model.frames:
+            names.append(f.name)
+        return names
+
     def get_joint_labels(self):
         return self.joint_labels
 
-    def get_forward_kinematics(self, q, v=None, frames=None):
+    def get_forward_kinematics(self, q, v=None, a=None, frames=None):
         q, is_symbolic = self._preprocess_vec(q)
+        if v is not None: v, _ = self._preprocess_vec(v)
+        if a is not None: a, _ = self._preprocess_vec(a)
         model, data, pin_backend = self._get_backend(is_symbolic)
         frame_ids, frame_names = self._parse_frame_labels(frames)
-        # print(f"Computing FK for frames: {frame_names}")
-        return_v = True
-        if v is None:
-            return_v = False
-            v = ca.DM(self.cpin_model.nv, 1) if is_symbolic else \
-                    np.zeros((self.pin_model.nv))
-        build_function = (not hasattr(self, 'fn_forward_kinematics')) or \
-                         (self.fn_forward_kinematics.name_out() != frame_names)
+        return_v = (v is not None) or (a is not None)
+        return_a = a is not None
+        zeros = ca.DM.zeros if is_symbolic else np.zeros
+        if v is None: v = zeros(model.nv, 1) if is_symbolic else zeros(model.nv)
+        if a is None: a = zeros(model.nv, 1) if is_symbolic else zeros(model.nv)
+        build_function = not hasattr(self, 'fn_forward_kinematics') or \
+                         getattr(self, '_fk_frame_names', None) != tuple(frame_names)
+
         if is_symbolic:
             if build_function:
                 q_sym = ca.SX.sym('q', self.cpin_model.nq, 1)
                 v_sym = ca.SX.sym('v', self.cpin_model.nv, 1)
-                pin_backend.forwardKinematics(model, data, q_sym, v_sym)
+                a_sym = ca.SX.sym('a', self.cpin_model.nv, 1)
+                pin_backend.forwardKinematics(model, data, q_sym, v_sym, a_sym)
                 pin_backend.updateFramePlacements(model, data)
-                p_out = [data.oMf[i].translation for i in frame_ids]
-                R_out = [ca.reshape(data.oMf[i].rotation, 9, 1) for i in frame_ids]
-                v_out = [pin_backend.getFrameVelocity(
-                    model, data, f, pin_backend.ReferenceFrame.WORLD).linear
-                    for f in frame_ids]
-                w_out = [pin_backend.getFrameVelocity(
-                    model, data, f, pin_backend.ReferenceFrame.WORLD).angular
-                    for f in frame_ids]
-                sym_in = [q_sym, v_sym]
-                sym_out = [*p_out, *R_out, *v_out, *w_out]
-                labels_in = ['q', 'v']
-                labels_out = [*[f'p_{name}' for name in frame_names],
-                              *[f'R_{name}' for name in frame_names],
-                              *[f'v_{name}' for name in frame_names],
-                              *[f'w_{name}' for name in frame_names]]
+                p_out = [data.oMf[f].translation for f in frame_ids]
+                R_out = [ca.reshape(data.oMf[f].rotation, 9, 1) for f in frame_ids]
+                v_out, w_out, a_out, alpha_out = [], [], [], []
+                for f in frame_ids:
+                    vel = pin_backend.getFrameVelocity(model, data, f, pin_backend.ReferenceFrame.WORLD)
+                    acc = pin_backend.getFrameAcceleration(model, data, f, pin_backend.ReferenceFrame.WORLD)
+                    v_out.append(vel.linear); w_out.append(vel.angular)
+                    a_out.append(acc.linear); alpha_out.append(acc.angular)
+                sym_out = [*p_out, *R_out, *v_out, *w_out, *a_out, *alpha_out]
+                labels_out = sum(([f'{tag}_{name}' for name in frame_names]
+                                  for tag in ('p', 'R', 'v', 'w', 'lin_acc', 'ang_acc')), [])
                 self.fn_forward_kinematics = ca.Function(
-                    'forward_kinematics', sym_in, sym_out,
-                    labels_in, labels_out, self.fn_opts
-                )
-            return self.fn_forward_kinematics.call({'q': q, 'v': v})
-        else:
-            pin_backend.forwardKinematics(model, data, q, v)
-            pin_backend.updateFramePlacements(model, data)
-            pos_frames = {name: data.oMf[i] for name, i in zip(frame_names, frame_ids)}
-            vel_frames = {
-                name: pin_backend.getFrameVelocity(
-                    model, data, f, pin_backend.ReferenceFrame.LOCAL)
-                for name, f in zip(frame_names, frame_ids)
-                }
-            return (pos_frames, vel_frames) if return_v else pos_frames
+                    'forward_kinematics', [q_sym, v_sym, a_sym], sym_out,
+                    ['q', 'v', 'a'], labels_out, self.fn_opts)
+                self._fk_frame_names = tuple(frame_names)
+
+            out = self.fn_forward_kinematics.call({'q': q, 'v': v, 'a': a})
+            if not return_v: return {k: val for k, val in out.items() if k.startswith(('p_', 'R_'))}
+            if not return_a: return {k: val for k, val in out.items() if not k.startswith(('a_', 'alpha_'))}
+            return out
+
+        if return_a: pin_backend.forwardKinematics(model, data, q, v, a)
+        elif return_v: pin_backend.forwardKinematics(model, data, q, v)
+        else: pin_backend.forwardKinematics(model, data, q)
+        pin_backend.updateFramePlacements(model, data)
+        pos_frames = {name: data.oMf[i] for name, i in zip(frame_names, frame_ids)}
+        if not return_v: return pos_frames
+        vel_frames = {name: pin_backend.getFrameVelocity(
+            model, data, f, pin_backend.ReferenceFrame.WORLD)
+            for name, f in zip(frame_names, frame_ids)}
+        if return_a:
+            acc_frames = {name: pin_backend.getFrameAcceleration(
+                model, data, f, pin_backend.ReferenceFrame.WORLD)
+                for name, f in zip(frame_names, frame_ids)}
+            return pos_frames, vel_frames, acc_frames
+        return pos_frames, vel_frames
 
     def get_integrated_states(self, q, dq):
         q, is_symbolic = self._preprocess_vec(q)
@@ -184,22 +199,6 @@ class PinocchioModel(RobotModel):
                 [phi], ['R_1', 'R_2'], ['phi'],
                 self.fn_opts)
         return self.fn_rotation_error(R_1, R_2)
-
-    # def get_jacobian(self, q, frames=None):
-    #     q, is_symbolic = self._preprocess_vec(q)
-    #     model, data, pin_backend = self._get_backend(is_symbolic)
-    #     frame_ids, frame_names = self._parse_frame_labels(frames)
-    #     print(f"Computing Jacobians for frames: {frame_names}")
-        
-    #     # ! Confirm difference between reference frames
-    #     J_frames = {
-    #         name: pin_backend.computeFrameJacobian(
-    #             model, data, q, f,
-    #             # pin_backend.ReferenceFrame.LOCAL_WORLD_ALIGNED)
-    #             pin_backend.ReferenceFrame.WORLD)
-    #         for name, f in zip(frame_names, frame_ids)
-    #     }
-    #     return J_frames
 
     def get_inverse_dynamics(self, q, v, a):
         q, is_symbolic = self._preprocess_vec(q)

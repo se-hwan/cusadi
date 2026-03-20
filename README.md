@@ -34,6 +34,8 @@ pip install -e .
 cd $PARENT_PROJECT_ROOT
 git submodule add https://github.com/se-hwan/cusadi .
 conda env update --name $PARENT_CONDA_ENV --file cusadi/environment.yml
+# For Isaaclab installation, install pip dependencies AFTER conda install.
+
 
 # Keep IsaacLab / Isaac Sim as the source of truth for shared packages.
 # Do not let a broad pip install rewrite its pinned dependencies.

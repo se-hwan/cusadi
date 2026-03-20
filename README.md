@@ -34,9 +34,21 @@ pip install -e .
 cd $PARENT_PROJECT_ROOT
 git submodule add https://github.com/se-hwan/cusadi .
 conda env update --name $PARENT_CONDA_ENV --file cusadi/environment.yml
-pip install -r cusadi/requirements.txt
-pip install -e cusadi
+
+# Keep IsaacLab / Isaac Sim as the source of truth for shared packages.
+# Do not let a broad pip install rewrite its pinned dependencies.
+pip install --no-deps -e cusadi
+pip install ninja
+
+
+# Optional visualization extras. Install only if needed, and prefer a separate
+# environment if they trigger resolver conflicts with IsaacLab.
+# pip install viser yourdfpy seaborn
 ```
+
+! May be necessary
+In `env_vars.sh` located at `~/miniconda3/envs/$ENV_NAME/etc/conda/activate.d`
+    export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 
 
 ### TO DO:

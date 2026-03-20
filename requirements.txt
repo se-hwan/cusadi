@@ -3,3 +3,4 @@ torchvision==0.22.0
 viser
 yourdfpy
 ninja
+seaborn

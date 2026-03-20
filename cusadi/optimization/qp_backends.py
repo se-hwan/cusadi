@@ -72,13 +72,16 @@ class QPBackend(ABC):
         compile_and_load_kernels(kernel_names)
 
     @abstractmethod
+    def get_kkt_sparsity(self):
+        pass
+
+    @abstractmethod
     def build_parallel_fns(self, linsys_method) -> list:
         pass
 
     @abstractmethod
     def _unpack_symbolics(self):
         pass
-
 
     def _setup_cudss_interface(self,
                      linsys_sparsity: ca.Sparsity,
@@ -181,20 +184,21 @@ class OSQPBackend(QPBackend):
     osqp_cfg = {
         "rho": 0.1,
         "verbose": False,
-        "adaptive_rho": True,
+        "adaptive_rho": False,
         "max_iter": 25,
         "scaling": 2,
-        "check_termination": 25,
+        "check_termination": 100,
         "sigma": 1e-6,
         "alpha": 1.6,
         "warm_starting": False
         }
-    parallelization_ready: bool = False
-
     def __init__(self, opti_problem, qp_cfg=None):
         self.problem = opti_problem
         qp_cfg = qp_cfg or {}
+        self.osqp_cfg = dict(type(self).osqp_cfg)
         self.osqp_cfg.update(qp_cfg)
+        self.parallelization_ready = False
+        self.cusadi_fns = {}
         self.qp_setup = False
         self.solver = osqp.OSQP()
 
@@ -214,6 +218,12 @@ class OSQPBackend(QPBackend):
     # 1. Evaluate QP matrices, solve with OSQP
     # 2. Evaluate custom OSQP functions, solve with LDL
     def solve_step(self, x_eval, p_eval, solve_method=None):
+        if solve_method is None:
+            return self.solve_with_osqp(x_eval, p_eval)
+        elif solve_method == 'custom':
+            return self.solve_with_functions(x_eval, p_eval)
+
+    def solve_with_osqp(self, x_eval, p_eval):
         qp_data = self._compute_qp_data(x_eval, p_eval)
         if not self.qp_setup:
             self._setup_problem(qp_data)
@@ -221,6 +231,41 @@ class OSQPBackend(QPBackend):
             self._update_problem(qp_data)
         soln = np.array([self.solver.solve().x])
         return soln.reshape(x_eval.shape[0], 1)
+
+    def solve_with_functions(self, x_eval, p_eval):
+        if not hasattr(self, "fn_KKT_matrix"):
+            self.build_parallel_fns('ldl')
+
+        x_k = np.zeros((self.problem.n_x, 1))
+        y_k = np.zeros((self.problem.n_g, 1))
+        z_k = np.zeros((self.problem.n_g, 1))
+        
+        A_KKT = self.fn_KKT_matrix(x_eval, p_eval)
+        [A_KKT_scaled_triu, q_scaled, D_scaled, lb_scaled, ub_scaled] = \
+            self.fn_ruiz_scaling(A_KKT.nonzeros(), x_eval, p_eval, self.osqp_cfg['sigma'], self.osqp_cfg['rho'])
+        D_ldl, L_ldl, _ = self.fn_LDL_fac(A_KKT_scaled_triu.nonzeros())
+        for _ in range(self.osqp_cfg['max_iter']):
+            b_KKT = self.fn_KKT_vector(q_scaled,
+                                         x_k,
+                                         y_k,
+                                         z_k,
+                                         self.osqp_cfg['sigma'],
+                                         self.osqp_cfg['rho'])
+            soln_KKT = self.fn_LDL_solve(b_KKT, D_ldl, L_ldl.nonzeros())
+            x_next, y_next, z_next = self.fn_ADMM_step(
+                soln_KKT,
+                x_k,
+                y_k,
+                z_k,
+                lb_scaled,
+                ub_scaled,
+                self.osqp_cfg['alpha'],
+                self.osqp_cfg['rho'])
+            x_k[:] = x_next
+            y_k[:] = y_next
+            z_k[:] = z_next
+        # print("custom osqp soln: ", (D_scaled * x_k).T)
+        return (D_scaled * x_k).toarray()
 
     def _build_qp_functions(self):
         qp_sym = self._unpack_symbolics(self.problem.opti)
@@ -468,7 +513,16 @@ class OSQPBackend(QPBackend):
             print('cuDSS linear solver chosen. No CusADi functions generated.')
         else:
             "Unknown symbolic linear solver option. Choose 'cudss' or 'ldl'."
+        for f in parallel_fns:
+            print(f"{f.name()}: {f.n_instructions()} instructions.")
         return parallel_fns
+
+    def get_kkt_sparsity(self):
+        if not hasattr(self, "fn_ruiz_scaling"):
+            self.build_parallel_fns('ldl')
+        kkt_triu_sparsity = self.fn_ruiz_scaling.sparsity_out(0)
+        kkt_sparsity = ca.triu2symm(ca.SX(kkt_triu_sparsity))
+        return kkt_sparsity
 
     def compute_KKT_matrix(self, x, p, kkt):
             kkt_triu = ca.triu(kkt)
@@ -485,74 +539,73 @@ class OSQPBackend(QPBackend):
         n_sys = self.problem.n_sys
         n_x = self.problem.n_x
         n_g = self.problem.n_g
-        rho_norm_inv = self.problem.rho_norm_inv
 
         kkt_triu_sparsity = ca.triu(kkt_sparsity)
         kkt_nz = ca.MX.sym("kkt_nz", kkt_triu_sparsity.nnz(), 1)
         kkt_sym = ca.triu2symm(ca.MX(kkt_triu_sparsity, kkt_nz))
         sigma = ca.MX.sym("sigma", 1, 1)
         rho_bar = ca.MX.sym("rho_bar", 1, 1)
+        rho = self.rho_norm * rho_bar
+        rho_inv = 1 / rho
 
+        S_scale = ca.MX.eye(n_sys)
+        c_scale = 1
         P_kkt = kkt_sym[:n_x, :n_x]
         A_kkt = kkt_sym[n_x:, :n_x]
         P_bar = kkt_sym[:n_x, :n_x]
         A_bar = kkt_sym[n_x:, :n_x]
         q_bar = c
-        x_scale = ca.MX.ones(n_x, 1)
-        g_scale = ca.MX.ones(n_g, 1)
-        c_scale = 1
-
-        def _safe_inv_sqrt(max_entry):
-            denom = ca.sqrt(max_entry)
-            return ca.if_else(denom <= 0, 1, 1 / denom)
+        M_bar = ca.MX(n_sys, n_sys)
+        M_bar[:n_x, :n_x] = P_bar
+        M_bar[n_x:, :n_x] = A_bar
+        M_bar[:n_x, n_x:] = A_bar.T
+        delta = ca.MX.ones(n_sys, 1)
 
         for _ in range(self.osqp_cfg['scaling']):
-            delta_x = ca.MX.ones(n_x, 1)
-            delta_g = ca.MX.ones(n_g, 1)
+            for j in range(n_sys):
+                M_j_inf = ca.mmax(ca.fabs(M_bar[:, j]))
+                denom = ca.sqrt(M_j_inf)
+                delta[j] = ca.if_else(denom <= 0, 1, 1/denom)
+            D = ca.diag(delta[:n_x])
+            E = ca.diag(delta[n_x:])
+            P_bar = D @ P_bar @ D
+            A_bar = E @ A_bar @ D
+            q_bar = D @ q_bar
 
-            for j in range(n_x):
-                primal_col = ca.vertcat(P_bar[:, j], A_bar[:, j])
-                delta_x[j] = _safe_inv_sqrt(ca.mmax(ca.fabs(primal_col)))
-
-            for j in range(n_g):
-                dual_col = A_bar[j, :].T
-                delta_g[j] = _safe_inv_sqrt(ca.mmax(ca.fabs(dual_col)))
-
-            P_bar = ca.repmat(delta_x, 1, n_x) * P_bar * ca.repmat(delta_x.T, n_x, 1)
-            A_bar = ca.repmat(delta_g, 1, n_x) * A_bar * ca.repmat(delta_x.T, n_g, 1)
-            q_bar = delta_x * q_bar
-
-            P_bar_sum = 0
-            for j in range(n_x):
-                P_bar_sum = P_bar_sum + ca.mmax(ca.fabs(P_bar[:, j]))
-            P_bar_inf = P_bar_sum / n_x
+            P_inf_norm = ca.vertcat(*[ca.mmax(ca.fabs(P_bar[:, j])) for j in range(n_x)])
+            P_bar_inf = ca.sum(P_inf_norm) / n_x
             q_bar_inf = ca.mmax(ca.fabs(q_bar))
-            gamma = 1 / ca.fmax(P_bar_inf, q_bar_inf)
+            gamma = 1 / (ca.fmax(P_bar_inf, q_bar_inf))
             P_bar = gamma * P_bar
             q_bar = gamma * q_bar
-            x_scale = x_scale * delta_x
-            g_scale = g_scale * delta_g
+            S_scale = ca.diag(delta) @ S_scale
             c_scale = gamma * c_scale
+            M_bar = ca.MX(n_sys, n_sys)
+            M_bar[:n_x, :n_x] = P_bar
+            M_bar[n_x:, :n_x] = A_bar
+            M_bar[:n_x, n_x:] = A_bar.T
 
-        P_scaled = c_scale * (
-            ca.repmat(x_scale, 1, n_x) * P_kkt * ca.repmat(x_scale.T, n_x, 1)
-        )
-        A_scaled = ca.repmat(g_scale, 1, n_x) * A_kkt * ca.repmat(x_scale.T, n_g, 1)
-        q_scaled = c_scale * x_scale * c
-        z_lb_scaled = g_scale * z_lb
-        z_ub_scaled = g_scale * z_ub
+        S_scale = ca.diag(S_scale)
+        D_scale = ca.diag(S_scale[:n_x])
+        E_scale = ca.diag(S_scale[n_x:])
+        P_scaled = c_scale * D_scale @ P_kkt @ D_scale
+        A_scaled = E_scale @ A_kkt @ D_scale
+        q_scaled = c_scale @ D_scale @ c
+        z_lb_scaled = E_scale @ z_lb
+        z_ub_scaled = E_scale @ z_ub
 
         kkt_scaled = ca.MX(n_sys, n_sys)
         kkt_scaled[:n_x, :n_x] = P_scaled + sigma * ca.MX.eye(n_x)
         kkt_scaled[n_x:, :n_x] = A_scaled
         kkt_scaled[:n_x, n_x:] = A_scaled.T
-        kkt_scaled[n_x:, n_x:] = -ca.diag(rho_norm_inv) * rho_bar
+        kkt_scaled[n_x:, n_x:] = -ca.diag(rho_inv)
         kkt_scaled_triu = ca.triu(kkt_scaled)
+        D_scale = ca.diag(D_scale)
 
         return ca.Function(
             f"ruiz_scaling_{self.problem.name}",
             [kkt_nz, x, p, sigma, rho_bar],
-            [kkt_scaled_triu, q_scaled, x_scale, z_lb_scaled, z_ub_scaled],
+            [kkt_scaled_triu, q_scaled, D_scale, z_lb_scaled, z_ub_scaled],
             ["kkt_nz", "x", "p", "sigma", "rho_bar"],
             ["kkt_scaled_triu", "q_scaled", "D_scale", "z_lb_scaled", "z_ub_scaled"],
             self.problem.fn_opts,
@@ -562,8 +615,6 @@ class OSQPBackend(QPBackend):
         n_sys = self.problem.n_sys
         n_x = self.problem.n_x
         n_g = self.problem.n_g
-        rho_norm = self.problem.rho_norm
-        rho_norm_inv = 1/rho_norm.copy()
 
         x_solve = ca.MX.sym("x_solve", n_sys, 1)
         x_k = ca.MX.sym("x_k", n_x, 1)
@@ -573,13 +624,21 @@ class OSQPBackend(QPBackend):
         z_ub = ca.MX.sym("z_ub", n_g, 1)
         alpha = ca.MX.sym("alpha", 1, 1)
         rho_bar = ca.MX.sym("rho_bar", 1, 1)
+        rho = self.rho_norm * rho_bar
+        rho_inv = 1 / rho
         x_substep = x_solve[:n_x]
         nu_substep = x_solve[n_x:]
 
         w = alpha * nu_substep + (1 - alpha) * y_k
         x_next = alpha * x_substep + (1 - alpha) * x_k
-        z_next = ca.fmax(ca.fmin(rho_norm_inv * rho_bar * w + z_k, z_ub), z_lb)
-        y_next = w + rho_norm * rho_bar * (z_k - z_next)
+        z_next = ca.fmax(ca.fmin(rho_inv * w + z_k, z_ub), z_lb)
+        y_next = w + rho * (z_k - z_next)
+
+        # z_substep = z_k + rho_bar*rho_norm_inv*(nu_substep - y_k)
+        # x_next = alpha * x_substep + (1.0 - alpha) * x_k
+        # z_next = ca.fmax(ca.fmin(alpha * z_substep + (1 - alpha) * z_k + rho_norm_inv*rho_bar*y_k, z_ub), z_lb)
+        # y_next = y_k + rho_bar*rho_norm*(alpha*z_substep + (1.0 - alpha) * z_k - z_next)
+
         return ca.Function(
             f"ADMM_step_{self.problem.name}",
             [x_solve, x_k, y_k, z_k, z_lb, z_ub, alpha, rho_bar],
@@ -592,7 +651,6 @@ class OSQPBackend(QPBackend):
     def compute_KKT_vector(self):
         n_x = self.problem.n_x
         n_g = self.problem.n_g
-        rho_norm_inv = self.problem.rho_norm_inv
 
         q = ca.MX.sym("q", n_x, 1)
         x_k = ca.MX.sym("x_k", n_x, 1)
@@ -600,7 +658,10 @@ class OSQPBackend(QPBackend):
         z_k = ca.MX.sym("z_k", n_g, 1)
         sigma = ca.MX.sym("sigma", 1, 1)
         rho_bar = ca.MX.sym("rho_bar", 1, 1)
-        b_KKT = ca.vertcat(sigma * x_k - q, z_k - rho_bar * rho_norm_inv * y_k)
+        rho = self.rho_norm * rho_bar
+        rho_inv = 1 / rho
+
+        b_KKT = ca.vertcat(sigma * x_k - q, z_k - rho_inv * y_k)
         return ca.Function(
             f"KKT_vector_{self.problem.name}",
             [q, x_k, y_k, z_k, sigma, rho_bar],
@@ -644,15 +705,15 @@ class OSQPBackend(QPBackend):
 
 class RelaxedLogBackend(QPBackend):
     relaxed_log_cfg = {
-        "alpha": 0.5,
+        "alpha": 1.0,
         "max_iter": 20,
     }
-    parallelization_ready: bool = False
-    cusadi_fns: dict[str, CusadiFunction] = {}
-
     def __init__(self, problem, qp_cfg=None):
         self.problem = problem
+        self.relaxed_log_cfg = dict(type(self).relaxed_log_cfg)
         self.relaxed_log_cfg.update(qp_cfg or {})
+        self.parallelization_ready = False
+        self.cusadi_fns = {}
 
     def setup(self, x_init=None, p_init=None):
         self._build_qp_functions()
@@ -662,15 +723,12 @@ class RelaxedLogBackend(QPBackend):
     def solve_step(self, x_eval, p_eval, solve_method=None):
         dim_x = x_eval.shape[0]
         dx_soln = np.zeros_like(x_eval)
-        A_KKT, b_KKT = self.fn_relaxed_log_KKT(dx_soln, x_eval, p_eval)
-        D_KKT, L_KKT = self.fn_relaxed_log_LDL_fac(x_eval, p_eval)
         for _ in range(self.relaxed_log_cfg['max_iter']):
+            b_KKT = self.fn_relaxed_log_KKT_vec(dx_soln, x_eval, p_eval)
+            D_KKT, L_KKT = self.fn_relaxed_log_LDL_fac(dx_soln, x_eval, p_eval)
             soln_KKT = self.fn_relaxed_log_LDL_solve(b_KKT, D_KKT, L_KKT.nonzeros())
             dx_soln += self.relaxed_log_cfg["alpha"] * soln_KKT[:dim_x]
-            _, b_KKT = self.fn_relaxed_log_KKT(dx_soln, x_eval, p_eval)
         return dx_soln.toarray().reshape(dim_x, 1)
-        # soln = np.array(self.fn_relaxed_log_soln(x_eval, p_eval))
-        # return soln.reshape(x_eval.shape[0], 1)
 
     def solve_parallelized(self, x_eval, p_eval):
         dim_x = x_eval.shape[1]
@@ -686,26 +744,23 @@ class RelaxedLogBackend(QPBackend):
                 self.batch_size = input_batch_size
 
         dx_soln = torch.zeros_like(x_eval)
-        fn_KKT = self.cusadi_fns[f"relaxed_log_KKT_{self.problem.name}"]
-        [A_KKT, b_KKT] = fn_KKT.evaluate([dx_soln, x_eval, p_eval])
-        if self.linsys_method == 'cudss':
-            self.cudss_data.Ax[:, :] = A_KKT
-            self.cudss_data.b[:, :] = b_KKT
-            self.cudss_data.interface.factorizeNumeric()
-        elif self.linsys_method == 'ldl':
-            fn_LDL = self.cusadi_fns[f"relaxed_log_KKT_fac_{self.problem.name}"]
-            [D, L] = fn_LDL.evaluate([x_eval, p_eval])
+        fn_b_KKT = self.cusadi_fns[f"relaxed_log_KKT_vec_{self.problem.name}"]
         for _ in range(self.relaxed_log_cfg['max_iter']):
+            [b_KKT] = fn_b_KKT.evaluate([dx_soln, x_eval, p_eval])
             if self.linsys_method == 'cudss':
+                fn_A_KKT = self.cusadi_fns[f"relaxed_log_KKT_mat_{self.problem.name}"]
+                [A_KKT] = fn_A_KKT.evaluate([dx_soln, x_eval, p_eval])
+                self.cudss_data.Ax[:, :] = A_KKT
+                self.cudss_data.b[:, :] = b_KKT
+                self.cudss_data.interface.factorizeNumeric()
                 self.cudss_data.interface.solveLinearSystem()
                 soln_KKT = self.cudss_data.x[:, :]
             elif self.linsys_method == 'ldl':
+                fn_LDL = self.cusadi_fns[f"relaxed_log_KKT_fac_{self.problem.name}"]
                 fn_solve = self.cusadi_fns[f"relaxed_log_KKT_solve_{self.problem.name}"]
+                [D, L] = fn_LDL.evaluate([dx_soln, x_eval, p_eval])
                 [soln_KKT] = fn_solve.evaluate([b_KKT, D, L])
             dx_soln += self.relaxed_log_cfg["alpha"] * soln_KKT[:, :dim_x]
-            [_, b_KKT] = fn_KKT.evaluate([dx_soln, x_eval, p_eval])
-            if self.linsys_method == 'cudss':
-                self.cudss_data.b[:, :] = b_KKT
         return dx_soln
 
     def parallelize(self,
@@ -755,7 +810,7 @@ class RelaxedLogBackend(QPBackend):
                                                         dynamic_batching)
         # Setup cudss interface with KKT sparsity pattern
         if linsys_method == "cudss":
-            fn_KKT = self.cusadi_fns[f"relaxed_log_KKT_{self.problem.name}"].fn_casadi
+            fn_KKT = self.cusadi_fns[f"relaxed_log_KKT_mat_{self.problem.name}"].fn_casadi
             sparsity_KKT = fn_KKT.sparsity_out(0)
             self._setup_cudss_interface(sparsity_KKT, batch_size, precision)
         self.parallelization_ready = True
@@ -766,7 +821,8 @@ class RelaxedLogBackend(QPBackend):
         if not hasattr(self, "fn_relaxed_log_soln"):
             print('Symbolic LDL linear solver selected.')
             self._build_qp_functions()
-        parallel_fns = [self.fn_relaxed_log_KKT]
+        parallel_fns = [self.fn_relaxed_log_KKT_mat,
+                        self.fn_relaxed_log_KKT_vec]
         if linsys_method == 'ldl':
             parallel_fns.append(self.fn_relaxed_log_LDL_fac)
             parallel_fns.append(self.fn_relaxed_log_LDL_solve)
@@ -775,6 +831,13 @@ class RelaxedLogBackend(QPBackend):
         else:
             "Unknown symbolic linear solver option. Choose 'cudss' or 'ldl'."
         return parallel_fns
+
+    def get_kkt_sparsity(self):
+        if not hasattr(self, "fn_relaxed_log_KKT_mat"):
+            self.build_parallel_fns('ldl')
+        kkt_triu_sparsity = self.fn_relaxed_log_KKT_mat.sparsity_out(0)
+        kkt_sparsity = ca.triu2symm(ca.SX(kkt_triu_sparsity))
+        return kkt_sparsity
 
     def _build_qp_functions(self):
         qp_sym = self._unpack_symbolics(self.problem.opti)
@@ -787,13 +850,16 @@ class RelaxedLogBackend(QPBackend):
         A_ineq = qp_sym['A_ineq']
         b_ineq = qp_sym['b_ineq']
         dim_x = x.shape[0]
+        dim_sys = dim_x + A_eq.shape[0]
         
         # Form relaxed barrier problem for inequality constraints
         dx = ca.MX.sym("dx", dim_x, 1)
         ineq_barrier = self._relaxed_barrier(x=(A_ineq @ dx - b_ineq),
                                                 mu=0.05,
                                                 delta=0.1)
-        cost = 1/2 * dx.T @ P @ dx + c.T @ dx + ca.sum(ineq_barrier)
+                                                # mu=0.02,
+                                                # delta=0.05)
+        cost = 1/2 * dx.T @ P @ dx + c.T @ dx + 5*ca.sum(ineq_barrier)
         P_newton, c_newton = ca.hessian(cost, dx)
         A_newton = A_eq
         b_newton = b_eq - A_eq @ dx
@@ -802,32 +868,35 @@ class RelaxedLogBackend(QPBackend):
         print("Building Newton step function...")
         matrix_KKT_triu, matrix_KKT, vector_KKT = self._newton_step_KKT_system(
             P_newton, c_newton, A_newton, b_newton)
-        self.fn_relaxed_log_KKT = ca.Function(
-            f"relaxed_log_KKT_{self.problem.name}",
-            [dx, x, p], [matrix_KKT_triu, vector_KKT],
-            ["dx", "x", "p"], ["matrix_KKT", "vector_KKT"],
+        self.fn_relaxed_log_KKT_mat = ca.Function(
+            f"relaxed_log_KKT_mat_{self.problem.name}",
+            [dx, x, p], [matrix_KKT_triu],
+            ["dx", "x", "p"], ["matrix_KKT"],
+            self.problem.fn_opts
+        )
+        self.fn_relaxed_log_KKT_vec = ca.Function(
+            f"relaxed_log_KKT_vec_{self.problem.name}",
+            [dx, x, p], [vector_KKT],
+            ["dx", "x", "p"], ["vector_KKT"],
             self.problem.fn_opts
         )
 
         # Solve system symbolically with casadi LDL
         print("Building iterated LDL solve function...")
-        # dx_init = ca.SX.sym('dx_LDL', x.shape[0], 1)
+        dx_init = ca.SX.sym('dx_LDL', x.shape[0], 1)
         x_init = ca.SX.sym('x_LDL', x.shape[0], 1)
         p_init = ca.SX.sym('p_LDL', p.shape[0], 1)
-        x_soln = ca.SX(dim_x, 1)
-        # ! A_KKT doesn't change between QP iterations, not increasing mu
-        A_KKT_triu, b_KKT = self.fn_relaxed_log_KKT(x_soln, x_init, p_init)
+        A_KKT_triu = self.fn_relaxed_log_KKT_mat(dx_init, x_init, p_init)
         A_KKT = ca.triu2symm(A_KKT_triu)
         D, L, perm = ca.ldl(A_KKT, True)
 
         self.fn_relaxed_log_LDL_fac = ca.Function(
             f"relaxed_log_KKT_fac_{self.problem.name}",
-            [x_init, p_init], [D, L],
-            ["x", "p"], ["D", "L"],
+            [dx_init, x_init, p_init], [D, L],
+            ["dx", "x", "p"], ["D", "L"],
             self.problem.fn_opts
         )
-
-        b_sym = ca.SX.sym('b_sym', b_KKT.nnz(), 1)
+        b_sym = ca.SX.sym('b_sym', dim_sys, 1)
         D_sym = ca.SX.sym('D_sym', D.nnz(), 1)
         L_sym = ca.SX.sym('L_sym', L.nnz(), 1)
         D_mat = ca.SX(D.sparsity(), D_sym)
@@ -840,20 +909,10 @@ class RelaxedLogBackend(QPBackend):
             ["b", "D", "L"], ["soln_KKT"],
             self.problem.fn_opts
         )
-
-        # for _ in range(self.relaxed_log_cfg['max_iter']):
-        #     soln_KKT = ca.ldl_solve(b_KKT, D, L, perm)
-        #     x_soln += self.relaxed_log_cfg["alpha"] * soln_KKT[:dim_x]
-        #     _, b_KKT = self.fn_relaxed_log_KKT(x_soln, x_init, p_init)
-        # self.fn_relaxed_log_soln = ca.Function(
-        #     f"relaxed_log_soln_{self.problem.name}",
-        #     [x_init, p_init], [x_soln],
-        #     ["x", "p"], ["x_soln"],
-        #     self.problem.fn_opts
-        # )
-        print(f"Relaxed Log KKT function: {self.fn_relaxed_log_KKT.n_instructions()} instr.")
-        print(f"Relaxed Log iterations function: {self.fn_relaxed_log_LDL_fac.n_instructions()} instr.")
-        print(f"Relaxed Log iterations function: {self.fn_relaxed_log_LDL_solve.n_instructions()} instr.")
+        print(f"Relaxed Log KKT matrix function:        {self.fn_relaxed_log_KKT_mat.n_instructions()} instr.")
+        print(f"Relaxed Log KKT vector function:        {self.fn_relaxed_log_KKT_vec.n_instructions()} instr.")
+        print(f"Relaxed Log factorization function:     {self.fn_relaxed_log_LDL_fac.n_instructions()} instr.")
+        print(f"Relaxed Log solve function:             {self.fn_relaxed_log_LDL_solve.n_instructions()} instr.")
 
     def _newton_step_KKT_system(self, P, c, A, b):
         dim_x = P.shape[0]

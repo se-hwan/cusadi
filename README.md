@@ -25,9 +25,7 @@ export LD_LIBRARY_PATH="/usr/local/cuda-12/lib64:$LD_LIBRARY_PATH"
 cd $CUSADI_ROOT
 conda env create -f environment.yml
 conda activate cusadi
-pip install -U torch==2.7.0 torchvision==0.22.0 --index-url https://download.pytorch.org/whl/cu128
-pip install viser
-pip install yourdfpy
+pip install -r requirements.txt
 pip install -e .
 ```
 
@@ -36,11 +34,29 @@ pip install -e .
 cd $PARENT_PROJECT_ROOT
 git submodule add https://github.com/se-hwan/cusadi .
 conda env update --name $PARENT_CONDA_ENV --file cusadi/environment.yml
-pip install -U torch==2.7.0 torchvision==0.22.0 --index-url https://download.pytorch.org/whl/cu128
-pip install viser
-pip install yourdfpy
+pip install -r cusadi/requirements.txt
 pip install -e cusadi
 ```
+
+
+### TO DO:
+- [ ] Unit tests
+    - [ ] Parallelization (single and multiple functions)
+    - [ ] cuDSS interface
+    - [ ] ADMM implementation (compare against OSQP)
+    - [ ] Pinocchio model
+    - [ ] Many more...
+- [ ] Rename solvers to more general "ADMM" and "Barrier", not strictly OSQP
+- [ ] Casadi function storage and loading from OptimizationProblem object
+- [ ] Options for various barrier functions (max, log, etc.)
+- [ ] Add barrier options to config (mu, delta, coefficients for different barriers, etc.)
+- [ ] Refactor qp_backends.py, too large, separate
+- [ ] Refactor sqp_interface.py, add simple line search options
+- [ ] Refactor ipopt_interface.py
+- [ ] Cleanup pinocchio_model.py, reevaluate necessity of model.py
+- [ ] Cleanuip cusadi/utils folder, necessary? Clean up symbolic.py
+- [ ] Parse through to_sort folder
+
 
 ### Efficiency improvements:
 - DAG analysis of function structure, group parallelizable operations (overhead from synchronization?)

@@ -197,13 +197,24 @@ class OptimizationProblem:
                             if v['lb'] for i in v['idx']]
         self.post_processed = True
 
+    def compute_cost(self, x_eval, p_eval):
+        if not hasattr(self, 'fn_cost'):
+            self.fn_cost = ca.Function(f'{self.name}_cost',
+                                       [self.opti.x, self.opti.p],
+                                       [self.cost],
+                                       ['x', 'p'],
+                                       ['f'],
+                                       self.fn_opts
+                                       )
+        return self.fn_cost(x_eval, p_eval)
+
     def build_parameter_yaml(self):
         with open(f"{self.name}.yaml", "w") as f:
             for name, param in self.parameters.items():
                 flat = param.init.flatten(order='F').tolist()
                 f.write(f"{name}: {flat}\n")
 
-    # TODO: Convenient parameter getting and setting from key/YAML
+    # TODO: Convenient parameter getting and setting from YAML
 
     # ------------------------  ANALYSIS  ----------------------------- #
     def plot_sparsity_patterns(self):

@@ -59,7 +59,7 @@ class PinocchioModel(RobotModel):
         frame_ids, frame_names = self._parse_frame_labels(frames)
         return_v = (v is not None) or (a is not None)
         return_a = a is not None
-        zeros = ca.DM.zeros if is_symbolic else np.zeros
+        zeros = ca.DM if is_symbolic else np.zeros
         if v is None: v = zeros(model.nv, 1) if is_symbolic else zeros(model.nv)
         if a is None: a = zeros(model.nv, 1) if is_symbolic else zeros(model.nv)
         build_function = not hasattr(self, 'fn_forward_kinematics') or \
@@ -76,8 +76,10 @@ class PinocchioModel(RobotModel):
                 R_out = [ca.reshape(data.oMf[f].rotation, 9, 1) for f in frame_ids]
                 v_out, w_out, a_out, alpha_out = [], [], [], []
                 for f in frame_ids:
-                    vel = pin_backend.getFrameVelocity(model, data, f, pin_backend.ReferenceFrame.WORLD)
-                    acc = pin_backend.getFrameAcceleration(model, data, f, pin_backend.ReferenceFrame.WORLD)
+                    vel = pin_backend.getFrameVelocity(
+                        model, data, f, pin.LOCAL_WORLD_ALIGNED)
+                    acc = pin_backend.getFrameClassicalAcceleration(
+                        model, data, f, pin.LOCAL_WORLD_ALIGNED)
                     v_out.append(vel.linear); w_out.append(vel.angular)
                     a_out.append(acc.linear); alpha_out.append(acc.angular)
                 sym_out = [*p_out, *R_out, *v_out, *w_out, *a_out, *alpha_out]
@@ -100,11 +102,11 @@ class PinocchioModel(RobotModel):
         pos_frames = {name: data.oMf[i] for name, i in zip(frame_names, frame_ids)}
         if not return_v: return pos_frames
         vel_frames = {name: pin_backend.getFrameVelocity(
-            model, data, f, pin_backend.ReferenceFrame.WORLD)
+            model, data, f, pin.LOCAL_WORLD_ALIGNED)
             for name, f in zip(frame_names, frame_ids)}
         if return_a:
-            acc_frames = {name: pin_backend.getFrameAcceleration(
-                model, data, f, pin_backend.ReferenceFrame.WORLD)
+            acc_frames = {name: pin_backend.getFrameClassicalAcceleration(
+                model, data, f, pin.LOCAL_WORLD_ALIGNED)
                 for name, f in zip(frame_names, frame_ids)}
             return pos_frames, vel_frames, acc_frames
         return pos_frames, vel_frames

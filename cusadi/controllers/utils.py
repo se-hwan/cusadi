@@ -1,6 +1,18 @@
 import math
 import torch
 
+from dataclasses import dataclass
+
+@dataclass(frozen=True)
+class ActuatorSpec:
+    rotor_inertia: float
+    gear_ratio: float
+
+    @property
+    def armature(self) -> float:
+        return self.rotor_inertia * self.gear_ratio ** 2
+
+
 class BezierCurve:
     def __init__(self, points=None, n_envs=1, dim=3, n_points=5):
         if points is None:

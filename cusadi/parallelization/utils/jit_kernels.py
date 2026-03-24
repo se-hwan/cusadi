@@ -52,11 +52,11 @@ def compile_and_load_kernels(kernel_names):
                       is_python_module=True,
                       build_directory=f"{project_dir}/build_kernels"
                       )
-        # # torch may bump the loaded name to cusadi_kernels_vN when inputs change.
-        # # Keep a stable alias so `import cusadi_kernels` always points to latest.
-        # sys.modules['cusadi_kernels'] = module
-        # importlib.invalidate_caches()
-        # return module
+        # torch may bump the loaded name to cusadi_kernels_vN when inputs change.
+        # Keep a stable alias so `import cusadi_kernels` always points to latest.
+        sys.modules['cusadi_kernels'] = module
+        importlib.invalidate_caches()
+        return module
 
 def compile_and_load_cudss():
     if torch.cuda.is_available():

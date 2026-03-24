@@ -4,6 +4,7 @@ import os
 # List the submodules you want exposed under mpc_suite.*
 _submodules = [
     "visualization",
+    "controllers",
     "optimization",
     "utils",
     "models",

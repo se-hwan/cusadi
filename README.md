@@ -50,6 +50,7 @@ pip install ninja
 
 ! May be necessary
 In `env_vars.sh` located at `~/miniconda3/envs/$ENV_NAME/etc/conda/activate.d`
+    export PYTHONPATH="$REPOSITORY_ROOT:$PYTHONPATH"
     export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 
 

@@ -13,6 +13,15 @@ wheels/
 *.casadi
 *.o
 
+# Data files
+*.pt
+*.npz
+*.pkl
+
+# Image files
+*.pdf
+*.png
+
 # Robot-specific files
 *.dae
 *.stl

@@ -707,6 +707,8 @@ class RelaxedLogBackend(QPBackend):
     relaxed_log_cfg = {
         "alpha": 1.0,
         "max_iter": 20,
+        "mu_init": 0.05,
+        "delta_init": 0.1,
     }
     def __init__(self, problem, qp_cfg=None):
         self.problem = problem
@@ -723,11 +725,16 @@ class RelaxedLogBackend(QPBackend):
     def solve_step(self, x_eval, p_eval, solve_method=None):
         dim_x = x_eval.shape[0]
         dx_soln = np.zeros_like(x_eval)
+        mu = self.relaxed_log_cfg['mu_init']
+        delta = self.relaxed_log_cfg['delta_init']
         for _ in range(self.relaxed_log_cfg['max_iter']):
-            b_KKT = self.fn_relaxed_log_KKT_vec(dx_soln, x_eval, p_eval)
-            D_KKT, L_KKT = self.fn_relaxed_log_LDL_fac(dx_soln, x_eval, p_eval)
+            b_KKT = self.fn_relaxed_log_KKT_vec(dx_soln, x_eval, p_eval, mu, delta)
+            D_KKT, L_KKT = self.fn_relaxed_log_LDL_fac(dx_soln, x_eval, p_eval, mu, delta)
             soln_KKT = self.fn_relaxed_log_LDL_solve(b_KKT, D_KKT, L_KKT.nonzeros())
             dx_soln += self.relaxed_log_cfg["alpha"] * soln_KKT[:dim_x]
+            delta /= 4.0
+            mu /= 2.0
+            # print(delta, mu)
         return dx_soln.toarray().reshape(dim_x, 1)
 
     def solve_parallelized(self, x_eval, p_eval):
@@ -854,12 +861,14 @@ class RelaxedLogBackend(QPBackend):
         
         # Form relaxed barrier problem for inequality constraints
         dx = ca.MX.sym("dx", dim_x, 1)
+        mu = ca.MX.sym("mu", 1, 1)
+        delta = ca.MX.sym("delta", 1, 1)
         ineq_barrier = self._relaxed_barrier(x=(A_ineq @ dx - b_ineq),
-                                                mu=0.05,
-                                                delta=0.1)
+                                                mu=mu,
+                                                delta=delta)
                                                 # mu=0.02,
                                                 # delta=0.05)
-        cost = 1/2 * dx.T @ P @ dx + c.T @ dx + 5*ca.sum(ineq_barrier)
+        cost = 1/2 * dx.T @ P @ dx + c.T @ dx + ca.sum(ineq_barrier)
         P_newton, c_newton = ca.hessian(cost, dx)
         A_newton = A_eq
         b_newton = b_eq - A_eq @ dx
@@ -870,14 +879,14 @@ class RelaxedLogBackend(QPBackend):
             P_newton, c_newton, A_newton, b_newton)
         self.fn_relaxed_log_KKT_mat = ca.Function(
             f"relaxed_log_KKT_mat_{self.problem.name}",
-            [dx, x, p], [matrix_KKT_triu],
-            ["dx", "x", "p"], ["matrix_KKT"],
+            [dx, x, p, mu, delta], [matrix_KKT_triu],
+            ["dx", "x", "p", "mu", "delta"], ["matrix_KKT"],
             self.problem.fn_opts
         )
         self.fn_relaxed_log_KKT_vec = ca.Function(
             f"relaxed_log_KKT_vec_{self.problem.name}",
-            [dx, x, p], [vector_KKT],
-            ["dx", "x", "p"], ["vector_KKT"],
+            [dx, x, p, mu, delta], [vector_KKT],
+            ["dx", "x", "p", "mu", "delta"], ["vector_KKT"],
             self.problem.fn_opts
         )
 
@@ -886,14 +895,16 @@ class RelaxedLogBackend(QPBackend):
         dx_init = ca.SX.sym('dx_LDL', x.shape[0], 1)
         x_init = ca.SX.sym('x_LDL', x.shape[0], 1)
         p_init = ca.SX.sym('p_LDL', p.shape[0], 1)
-        A_KKT_triu = self.fn_relaxed_log_KKT_mat(dx_init, x_init, p_init)
+        mu = ca.SX.sym("mu", 1, 1)
+        delta = ca.SX.sym("delta", 1, 1)
+        A_KKT_triu = self.fn_relaxed_log_KKT_mat(dx_init, x_init, p_init, mu, delta)
         A_KKT = ca.triu2symm(A_KKT_triu)
         D, L, perm = ca.ldl(A_KKT, True)
 
         self.fn_relaxed_log_LDL_fac = ca.Function(
             f"relaxed_log_KKT_fac_{self.problem.name}",
-            [dx_init, x_init, p_init], [D, L],
-            ["dx", "x", "p"], ["D", "L"],
+            [dx_init, x_init, p_init, mu, delta], [D, L],
+            ["dx", "x", "p", "mu", "delta"], ["D", "L"],
             self.problem.fn_opts
         )
         b_sym = ca.SX.sym('b_sym', dim_sys, 1)

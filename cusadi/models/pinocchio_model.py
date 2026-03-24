@@ -38,6 +38,29 @@ class PinocchioModel(RobotModel):
         # print("Pinocchio model built.")
         # print("Joint labels:", self.joint_labels)
     
+    def set_model_parameter(self, field, value):
+        if hasattr(self.pin_model, field):
+            setattr(self.pin_model, field, value)
+            self.pin_data = pin.Data(self.pin_model)
+            self.cpin_model = cpin.Model(self.pin_model)
+            self.cpin_data = cpin.Data(self.cpin_model)
+            # Clear cached functions that embed model parameters.
+            for attr in (
+                'fn_forward_kinematics',
+                'fn_integration',
+                'fn_state_error',
+                'fn_jacobian',
+                'fn_external_wrench',
+                'fn_rotation_error',
+                'fn_inverse_dynamics',
+                '_fk_frame_names',
+            ):
+                if hasattr(self, attr):
+                    delattr(self, attr)
+            return
+        raise AttributeError(f"Pinocchio model has no field '{field}'")
+        
+    
     def set_end_effector_frames(self, frames: list|str):
         frame_ids, _ = self._parse_frame_labels(frames)
         self.end_eff_frame_ids = frame_ids

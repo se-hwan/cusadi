@@ -1,0 +1,4 @@
+*.casadi
+*.c
+*.so
+*.hash

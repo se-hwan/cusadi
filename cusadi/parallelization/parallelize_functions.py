@@ -42,10 +42,24 @@ def _fingerprint_function(fn):
     return hashlib.sha256(serialized).hexdigest()
 
 
+def _fingerprint_codegen_sources():
+    sources = [
+        os.path.join(CURRENT_DIR, "kernel_codegen.py"),
+        os.path.join(CURRENT_DIR, "kernel_operations.py"),
+    ]
+    h = hashlib.sha256()
+    for path in sources:
+        if os.path.exists(path):
+            with open(path, "rb") as f:
+                h.update(f.read())
+    return h.hexdigest()
+
+
 def _build_manifest_entry(fn, batch_size, precision, dynamic_batching):
     entry = {
         "name": fn.name(),
         "fingerprint": _fingerprint_function(fn),
+        "codegen_fingerprint": _fingerprint_codegen_sources(),
         "n_in": fn.n_in(),
         "n_out": fn.n_out(),
         "n_instr": fn.n_instructions(),

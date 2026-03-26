@@ -1,7 +1,6 @@
 import os
 import re
-import textwrap
-import casadi as ca
+import numpy as np
 from casadi import *
 
 # Get the directory of the current file
@@ -67,10 +66,16 @@ def get_cuda_header(f):
     str_header += "#include \"../utils/cuda_utils.cu\"\n\n"
     str_header += "#include <math.h>\n"
     str_header += "#include <limits.h>\n"
-    str_header += f"\n__constant__ int nnz_in[] = {{{','.join(map(str, nnz_in))}}};"
-    str_header += f"\n__constant__ int nnz_out[] = {{{','.join(map(str, nnz_out))}}};"
-    str_header += f"\n__constant__ int n_w = {n_w};\n"
+    str_header += f"\nstatic __constant__ int nnz_in[] = {{{','.join(map(str, nnz_in))}}};"
+    str_header += f"\nstatic __constant__ int nnz_out[] = {{{','.join(map(str, nnz_out))}}};"
     return str_header
+
+def format_const_literal(value, precision):
+    is_float = precision == "float"
+    v = float(np.float32(value)) if is_float else float(value) # float(val) is double, in Python
+    if np.isinf(v): return "inf" if v > 0 else "-inf"
+    if np.isnan(v): return 'nanf("")' if is_float else 'nan("")'
+    return v.hex() + ("f" if is_float else "")
 
 def get_kernel(f, batch_size, precision, dynamic_batching):
     # * Parse CasADi function
@@ -117,7 +122,8 @@ def get_kernel(f, batch_size, precision, dynamic_batching):
         o_idx = output_idx[o_instr]
         i_idx = input_idx[i_instr]
         if op == OP_CONST:
-            str_kernel += CUDA_OPS[op] % (offset*o_idx, const_instr[k])
+            const_literal = format_const_literal(const_instr[k], precision)
+            str_kernel += CUDA_OPS[op] % (offset*o_idx, const_literal)
         elif op == OP_INPUT:
             str_kernel += CUDA_OPS[op] % (offset*o_idx, i_idx, i_idx, input_idx[i_instr + 1])
         elif op == OP_OUTPUT:
@@ -220,6 +226,11 @@ def _generate_header_binding_block(f_name, n_in, n_out, precision):
     fn_binding += "}\n\n"
     return fn_signature + fn_binding
 
+
+def _binding_block_matches_precision(block, precision):
+    token = f"data_ptr<{precision}>()"
+    return token in block
+
 def _parse_bindings_header(content):
     preamble_match = re.match(r'(?P<preamble>.*?)(?=extern "C" void launch_|\Z)', content, re.DOTALL)
     preamble = preamble_match.group("preamble") if preamble_match else _default_bindings_header()
@@ -308,7 +319,16 @@ def pybind_codegen(f, precision):
 
     if f_name in kernel_names:
         current_binding = header_bindings.get(f_name)
-        if current_binding is None or current_binding["n_in"] != n_in or current_binding["n_out"] != n_out:
+        block_matches_precision = (
+            current_binding is not None
+            and _binding_block_matches_precision(current_binding["block"], precision)
+        )
+        if (
+            current_binding is None
+            or current_binding["n_in"] != n_in
+            or current_binding["n_out"] != n_out
+            or not block_matches_precision
+        ):
             header_bindings[f_name] = {
                 "name": f_name,
                 "n_in": n_in,

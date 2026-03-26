@@ -50,7 +50,7 @@ OP_CUDA_DICT = {
     OP_ACOSH:               "\n        work[tID + batch_size * %d] = acosh(work[tID + batch_size * %d]);",
     OP_ATANH:               "\n        work[tID + batch_size * %d] = atanh(work[tID + batch_size * %d]);",
     OP_ATAN2:               "\n        work[tID + batch_size * %d] = atan2(work[tID + batch_size * %d], work[tID + batch_size * %d]);",
-    OP_CONST:               "\n        work[tID + batch_size * %d] = %.15f;",
+    OP_CONST:               "\n        work[tID + batch_size * %d] = %s;",
     OP_INPUT:               "\n        work[tID + batch_size * %d] = input_%d[tID*nnz_in[%d] + %d];",
     OP_OUTPUT:              "\n        output_%d[tID*nnz_out[%d] + %d] = work[tID + batch_size * %d];",
 }
@@ -100,7 +100,7 @@ OP_CUDA_DICT_COALESCED = {
     OP_ACOSH:               "\n        work[tID + %d] = acosh(work[tID + %d]);",
     OP_ATANH:               "\n        work[tID + %d] = atanh(work[tID + %d]);",
     OP_ATAN2:               "\n        work[tID + %d] = atan2(work[tID + %d], work[tID + %d]);",
-    OP_CONST:               "\n        work[tID + %d] = %.15f;",
+    OP_CONST:               "\n        work[tID + %d] = %s;",
     OP_INPUT:               "\n        work[tID + %d] = input_%d[tID*nnz_in[%d] + %d];",
     OP_OUTPUT:              "\n        output_%d[tID*nnz_out[%d] + %d] = work[tID + %d];",
 }

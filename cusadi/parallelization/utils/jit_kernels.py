@@ -21,17 +21,6 @@ def compile_and_load_kernels(kernel_names):
         os.makedirs(f"{build_dir}")
     print("Loading JIT kernels from: ", codegen_dir)
     print("Build directory: ", f"{build_dir}")
-    
-    # # ! CLEAN UP
-    # CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-    # CODEGEN_DIR = os.path.join(os.path.dirname(CURRENT_DIR), "codegen")
-    # kernel_names = sorted(
-    #     os.path.splitext(filename)[0]
-    #     for filename in os.listdir(CODEGEN_DIR)
-    #     if filename.endswith(".cu")
-    # )
-    # print(kernel_names)
-    # # ! END CLEAN UP
 
     kernel_sources = []
     for name in sorted(kernel_names):
@@ -48,6 +37,7 @@ def compile_and_load_kernels(kernel_names):
                                     # '-march=native'
                                     ],
                       extra_cuda_cflags=['-O3', '--use_fast_math', '-arch=sm_86'],
+                    #   extra_cuda_cflags=['-O3', '-arch=sm_86'],
                       verbose=True,
                       is_python_module=True,
                       build_directory=f"{project_dir}/build_kernels"
@@ -65,6 +55,11 @@ def compile_and_load_cudss():
         print(f"\n**********Compiling cuDSS for detected CUDA architecture {major}.{minor}**********")
     parallel_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     project_dir = os.path.dirname(os.path.dirname(parallel_dir))
+    build_dir = os.path.join(project_dir, 'build_cudss')
+    # Make build directory if it doesn't exist:
+    if not os.path.exists(f"{build_dir}"):
+        os.makedirs(f"{build_dir}")
+
     cudss_source = [os.path.join(parallel_dir, 'utils', 'cudss_binding.cpp'),
                     os.path.join(parallel_dir, 'utils', 'cudss_interface.cu'),
                     os.path.join(parallel_dir, 'utils', 'cuda_utils.cu'),]

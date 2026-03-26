@@ -74,7 +74,7 @@ class CusadiFunction:
         self.eval_time = self._fn_kernel(self.batch_size,
                                          *self.input_tensors,
                                          *self.output_tensors,
-                                         self._work_tensor)
+                                         self._work_tensor) # type: ignore
         return self.output_tensors
 
     def test(self, n_test_envs=4096, seed=np.random.randint(0, 1e6)):
@@ -151,10 +151,11 @@ class CusadiFunction:
         
     def _resize_tensors(self, new_batch_size: int):
         if not self.dynamic_batching:
-            print("Dynamic batching must be true to resize cusadi function.")
-            print(f"Current batch size is {self.batch_size}, but inputs are {new_batch_size}.")
-            print(f"Recompile function with dynamic batching to give arbitrary size input batches.")
-            return AssertionError
+            raise RuntimeError(
+                "Static-batch CusADi kernel received a mismatched batch size. "
+                f"Kernel batch size is {self.batch_size}, but inputs have {new_batch_size} rows. "
+                "Recompile with dynamic batching or keep the runtime batch size fixed."
+            )
         self.batch_size = new_batch_size
         self._setup()
 

@@ -278,6 +278,7 @@ class ADMMBackend(QPBackend):
             self.gpu_fn_ldl_solve = self.cusadi_fns[f"ldl_solve_{self.problem.name}"]
         else:
             raise ValueError(f"Unknown linsys method: {self.linsys_method}")
+        self.parallelization_ready = True
         return self.cusadi_fns
 
 

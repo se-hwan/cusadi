@@ -46,6 +46,11 @@ class ADMMBackend(QPBackend):
                               **self.osqp_cfg)
             self.qp_setup = True
 
+    def update_settings(self, osqp_settings):
+        self.osqp_cfg.update(osqp_settings)
+        if self.qp_setup:
+            self.solver.update(**osqp_settings)
+
     def solve_step(self, x_eval, p_eval, solve_method=None):
         if solve_method is None:
             return self.solve_with_osqp(x_eval, p_eval)

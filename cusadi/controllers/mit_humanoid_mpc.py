@@ -776,7 +776,7 @@ class MITHumanoidModelPredictiveController:
         x_guess = self.x_default if self.last_soln is None else self.last_soln
         x_eval = x_guess if x is None else x
         p_eval = self.p_default if p is None else p
-        soln = self.solver.solve(x_eval, p_eval)
+        soln = self.solver.solve(x_eval, p_eval, solve_method='custom')
         self.last_soln = soln.copy()
         return soln
 
@@ -857,7 +857,7 @@ if __name__ == "__main__":
     import sys
     import torch
     from cusadi.parallelization import parallelize_functions
-    BATCH_SIZE = 2
+    BATCH_SIZE = 512
     controller_fns = controller.solver.setup_parallelization('cudss',
                                                              batch_size=BATCH_SIZE,
                                                              precision='float',

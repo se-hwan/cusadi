@@ -5,7 +5,7 @@ import numpy as np
 from cusadi.models import PinocchioModel
 from cusadi.optimization import OptimizationProblem
 from cusadi.visualization import Visualizer3D
-from .utils import ActuatorSpec
+from cusadi.controllers.utils import ActuatorSpec
 
 ACTUATOR_SPECS = {
     "hip_yaw": ActuatorSpec(1.6841e-4, 6.0),

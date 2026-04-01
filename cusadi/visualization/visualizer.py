@@ -1,12 +1,14 @@
 from typing import Dict
+from pathlib import Path
+from io import BytesIO
 import viser
-import imageio
 import numpy as np
 from viser.extras import ViserUrdf
 import yourdfpy
 import time
 import subprocess
 import trimesh
+from PIL import Image
 from cusadi.utils.coord_conventions \
     import convert_coordinates, convert_floating_base, convert_joint_order
 from cusadi.utils.coord_conventions import VISER_CONVENTION
@@ -201,68 +203,77 @@ class Visualizer3D:
             button_step = self.server.gui.add_button_group("Frame", ("Prev", "Next"))
             slider_trajectory = self.server.gui.add_slider(
                 f"Timestep", min=0, max=p_traj.shape[1], step=1, initial_value=0)
+            
+            is_playing = [False]
             @button_play.on_click
             def _(_) -> None:
+                is_playing[0] = True
+                t_start = time.perf_counter()
                 for i in range(p_traj.shape[1]):
                     with self.server.atomic():
                         self.update_urdf(name, p_traj[:, i], ori_traj[:, i], jnt_traj[:, i])
-                        slider_trajectory.value = i
-                    time.sleep(dt)
+                    slider_trajectory.value = i
+                    # Sleep only for the remaining time until the next frame deadline
+                    deadline = t_start + (i + 1) * dt
+                    remaining = deadline - time.perf_counter()
+                    if remaining > 0:
+                        time.sleep(remaining)
+                is_playing[0] = False
+
+
+            @slider_trajectory.on_update
+            def _(_):
+                if is_playing[0]:
+                    return
+                i = slider_trajectory.value
+                with self.server.atomic():
+                    self.update_urdf(name, p_traj[:, i], ori_traj[:, i], jnt_traj[:, i])
+
+            # @button_play.on_click
+            # def _(_) -> None:
+            #     for i in range(p_traj.shape[1]):
+            #         with self.server.atomic():
+            #             self.update_urdf(name, p_traj[:, i], ori_traj[:, i], jnt_traj[:, i])
+            #             slider_trajectory.value = i
+            #         time.sleep(dt)
             @button_step.on_click
             def _(_) -> None:
                 if button_step.value == "Prev":
                     slider_trajectory.value -= 1
                 elif button_step.value == "Next":
                     slider_trajectory.value += 1
-            @slider_trajectory.on_update
-            def _(_):
-                i = slider_trajectory.value
-                with self.server.atomic():
-                    self.update_urdf(name, p_traj[:, i], ori_traj[:, i], jnt_traj[:, i])
 
-            # self.button_record_animation = self.server.gui.add_button("Record trajectory")
-            # self.text_record_filename = self.server.gui.add_text(
-            #     "Filename", initial_value="animation.mp4")
-            # self.camera_tracking = self.server.gui.add_checkbox(
-            #     "Track", initial_value=False)
-            # self.camera_offset = self.server.gui.add_vector3(
-            #     "Cam. offset", initial_value=(1.0, -12.0, 1.0))
-
-            # @self.button_play_animation.on_click
-            # def _(event: viser.GuiEvent) -> None:
-            #     client = event.client
-            #     assert client is not None
-
-            #     camera_pos_prev = client.camera.position
-            #     for i in range(jnt_traj.shape[1]):
-            #         if self.camera_tracking.value:
-            #             camera_rel_traj = p_traj[:, i] + self.camera_offset.value
-            #             camera_xyz = 0.2*camera_rel_traj + 0.8*camera_pos_prev
-            #             self.position_camera(position=camera_xyz)
-            #             if i == 0:
-            #                 client.camera.position = camera_rel_traj
-            #                 client.camera.look_at = p_traj[:, i]
-            #             camera_pos_prev = camera_xyz
-            #         self.update_urdf(name, p_traj[:, i], ori_traj[:, i], jnt_traj[:, i])
-            #         time.sleep(dt)  # Adjust the sleep time for desired speed
+            self.button_record_animation = self.server.gui.add_button("Record trajectory")
+            self.text_record_foldername = self.server.gui.add_text(
+                "Output folder", initial_value="animation_frames")
+            self.text_record_filename = self.server.gui.add_text(
+                "Filename", initial_value="animation")
+            self.camera_tracking = self.server.gui.add_checkbox(
+                "Track", initial_value=False)
+            self.camera_offset = self.server.gui.add_vector3(
+                "Cam. offset", initial_value=(1.0, -12.0, 1.0))
             
-            # @self.button_record_animation.on_click
-            # def _(event: viser.GuiEvent) -> None:
-            #     target_fps = 30
-            #     input_fps = 1.0 / dt  # original frame rate of your trajectory
-            #     frame_skip = max(1, int(input_fps / target_fps))
-            #     client = event.client
-            #     assert client is not None
-            #     video_frames = []
-            #     for i in range(0, jnt_traj.shape[1], frame_skip):
-            #         self.update_urdf(name, p_traj[:, i], ori_traj[:, i], jnt_traj[:, i])
-            #         frame = client.camera.get_render(height=1080, width=1920,
-            #                                         transport_format='jpeg')
-            #         video_frames.append(frame)
-            #     output_filename = self.text_record_filename.value
-            #     self.make_video(video_frames, output_filename=output_filename,
-            #                     fps=target_fps)
-            #     self.compress_video(output_filename)
+            @self.button_record_animation.on_click
+            def _(event: viser.GuiEvent) -> None:
+                target_fps = 30
+                input_fps = 1.0 / dt  # original frame rate of your trajectory
+                frame_skip = max(1, int(input_fps / target_fps))
+                client = event.client
+                assert client is not None
+                output_dir = self.text_record_foldername.value
+                filename = self.text_record_filename.value
+                frame_idx = 0
+                for i in range(0, jnt_traj.shape[1], frame_skip):
+                    self.update_urdf(name, p_traj[:, i], ori_traj[:, i], jnt_traj[:, i])
+                    frame = client.camera.get_render(height=1080, width=1920,
+                                                    transport_format='png')
+                    self.save_frame(frame, output_dir=output_dir, frame_idx=frame_idx)
+                    frame_idx += 1
+                print(f"Saved {frame_idx} frames to '{output_dir}'.")
+                output_video = f"{output_dir}/{filename}.mp4"
+                self.frames_to_video(output_dir, output_video, fps=target_fps)
+                self.delete_frames(output_dir)
+                print(f"Created video '{output_video}' and removed '{output_dir}'.")
 
     def position_camera(self, position):
         client = self.get_client()
@@ -290,25 +301,50 @@ class Visualizer3D:
             frames.append(frame)
         return frames
 
-    def make_video(self, video_frames, output_filename='animation.mp4', fps=30):
-        with imageio.get_writer(output_filename, fps=fps) as writer:
-            for frame in video_frames:
-                # imageio expects HWC RGB arrays
-                writer.append_data(frame)
-        print(f"Video '{output_filename}' created successfully.")
+    def save_frame(self, frame, output_dir='animation_frames', frame_idx=0):
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+        frame_path = output_path / f"frame_{frame_idx:06d}.png"
 
-    # def make_video(self, video_frames, # RGB arrays
-    #                output_filename='animation.mp4',
-    #                fps=30,
-    #                frame_size=(1920, 1080)):
-    #     # Define the codec and create VideoWriter object
-    #     fourcc = cv2.VideoWriter_fourcc(*'mp4v') # Codec for .mp4 files
-    #     video_writer = cv2.VideoWriter(output_filename, fourcc, fps, frame_size)
-    #     for frame in video_frames: # Write frames to the video
-    #         frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-    #         video_writer.write(frame_bgr)
-    #     video_writer.release() # Release the VideoWriter object
-    #     print(f"Video '{output_filename}' created successfully.")
+        if isinstance(frame, (bytes, bytearray)):
+            with Image.open(BytesIO(frame)) as img:
+                img.save(frame_path)
+            return
+
+        frame_array = np.asarray(frame, dtype=np.uint8)
+        if frame_array.ndim != 3:
+            raise ValueError("Frames must be PNG bytes or HWC RGB/RGBA arrays.")
+        if frame_array.shape[2] == 3:
+            Image.fromarray(frame_array, mode="RGB").save(frame_path)
+            return
+        if frame_array.shape[2] == 4:
+            Image.fromarray(frame_array, mode="RGBA").save(frame_path)
+            return
+        raise ValueError("Frames must be PNG bytes or HWC RGB/RGBA arrays.")
+
+    def frames_to_video(self, frames_dir, output_filename, fps=30):
+        frames_path = Path(frames_dir)
+        command = [
+            "ffmpeg",
+            "-loglevel", "error",
+            "-y",
+            "-framerate", str(fps),
+            "-i", str(frames_path / "frame_%06d.png"),
+            "-filter_complex",
+            "[0:v]format=rgba,split[fg][ref];[ref]geq=r=255:g=255:b=255:a=255[bg];[bg][fg]overlay,format=yuv420p",
+            "-c:v", "libx264",
+            output_filename,
+        ]
+        result = subprocess.run(command)
+        if result.returncode != 0:
+            raise RuntimeError(f"ffmpeg failed while writing '{output_filename}'.")
+
+    def delete_frames(self, frames_dir):
+        frames_path = Path(frames_dir)
+        for frame_path in frames_path.glob("frame_*.png"):
+            frame_path.unlink()
+        if not any(frames_path.iterdir()):
+            frames_path.rmdir()
 
     def compress_video(self, video_filepath):
         # Use ffmpeg to compress the video

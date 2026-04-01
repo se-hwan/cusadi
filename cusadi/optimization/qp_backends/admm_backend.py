@@ -24,7 +24,6 @@ class ADMMBackend(QPBackend):
         self.osqp_cfg = dict(type(self).osqp_cfg)
         self.osqp_cfg.update(qp_cfg)
         self.parallelization_ready = False
-        self.cusadi_fns = {}
         self.qp_setup = False
         self.solver = osqp.OSQP()
 
@@ -49,7 +48,7 @@ class ADMMBackend(QPBackend):
     def update_settings(self, osqp_settings):
         self.osqp_cfg.update(osqp_settings)
         if self.qp_setup:
-            self.solver.update(**osqp_settings)
+            self.solver.update_settings(**osqp_settings)
 
     def solve_step(self, x_eval, p_eval, solve_method=None):
         if solve_method is None:
@@ -279,12 +278,12 @@ class ADMMBackend(QPBackend):
             sparsity_KKT = self.gpu_fn_scaling.fn_casadi.sparsity_out(0)
             self._setup_cudss_interface(sparsity_KKT, self.batch_size, self.precision)
         elif self.linsys_method == "ldl":
-            self.gpu_fn_ldl_fac = self.cusadi_fns[f"ldl_factorize_{self.problem.name}"]
-            self.gpu_fn_ldl_solve = self.cusadi_fns[f"ldl_solve_{self.problem.name}"]
+            self.gpu_fn_ldl_fac = cusadi_fns[f"ldl_factorize_{self.problem.name}"]
+            self.gpu_fn_ldl_solve = cusadi_fns[f"ldl_solve_{self.problem.name}"]
         else:
             raise ValueError(f"Unknown linsys method: {self.linsys_method}")
         self.parallelization_ready = True
-        return self.cusadi_fns
+        return cusadi_fns
 
 
     # ************* SYMBOLIC SOLVER EXPRESSIONS *********** #

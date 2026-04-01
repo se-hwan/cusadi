@@ -18,10 +18,9 @@ class BarrierBackend(QPBackend):
         self.relaxed_log_cfg = dict(type(self).relaxed_log_cfg)
         self.relaxed_log_cfg.update(qp_cfg or {})
         self.parallelization_ready = False
-        self.cusadi_fns = {}
 
     def setup(self, x_init=None, p_init=None):
-        self._build_qp_functions()
+        pass
 
     def solve_step(self, x_eval, p_eval):
         dim_x = x_eval.shape[0]
@@ -122,7 +121,7 @@ class BarrierBackend(QPBackend):
             self.fn_LDL_fac = cusadi_fns[f"relaxed_log_KKT_fac_{self.problem.name}"]
             self.fn_LDL_solve = cusadi_fns[f"relaxed_log_KKT_solve_{self.problem.name}"]
         self.parallelization_ready = True
-        return self.cusadi_fns
+        return cusadi_fns
 
 
     # ************* SYMBOLIC SOLVER EXPRESSIONS *********** #

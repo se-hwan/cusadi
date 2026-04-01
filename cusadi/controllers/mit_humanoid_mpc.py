@@ -257,6 +257,9 @@ class MITHumanoidModelPredictiveController:
         self.formulation = OptimizationProblem('mit_humanoid_mpc')
         self.set_controller_constants()
         self.build_bezier_swing_fn()
+        self.build_contact_schedule_fn()
+        self.build_desired_trajectory_fn()
+        self.build_torque_interpolation_fn()
 
         # Decision variables
         X_opt = self.formulation.add_variable(self.N_STAGE, self.N_HORIZON, 'X_opt')
@@ -776,7 +779,7 @@ class MITHumanoidModelPredictiveController:
         x_guess = self.x_default if self.last_soln is None else self.last_soln
         x_eval = x_guess if x is None else x
         p_eval = self.p_default if p is None else p
-        soln = self.solver.solve(x_eval, p_eval, solve_method='custom')
+        soln = self.solver.solve(x_eval, p_eval)
         self.last_soln = soln.copy()
         return soln
 

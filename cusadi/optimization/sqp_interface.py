@@ -1,5 +1,5 @@
 import casadi as ca
-from .qp_backends import QPBackend, OSQPBackend, RelaxedLogBackend
+from .qp_backends import QPBackend, ADMMBackend, BarrierBackend
 
 
 class SQPInterface:
@@ -21,7 +21,7 @@ class SQPInterface:
 
         self._setup_qp_backend(self.problem, qp_cfg, x_init, p_init)
 
-    # SQP solve loop on CPU
+    # TODO: resolve this similar behavior
     def solve(self, x_eval, p_eval, solve_method=None):
         x_soln = x_eval.copy()
         for _ in range(self.max_iter):
@@ -36,19 +36,24 @@ class SQPInterface:
             x_soln += self.alpha * dx
         return x_soln
 
-    def parallelize(self, linsys_method,
-                    batch_size=4096,
-                    precision='float',
-                    dynamic_batching=True):
-        cusadi_fns = self.qp_backend.parallelize(
-            linsys_method, batch_size, precision, dynamic_batching)
-        return cusadi_fns
+    def setup_parallelization(self,
+                              linsys_method,
+                              batch_size=4096,
+                              precision='float',
+                              dynamic_batching=True):
+        return self.qp_backend.setup_parallelization(linsys_method,
+                                                     batch_size,
+                                                     precision,
+                                                     dynamic_batching)
+
+    def set_cusadi_functions(self, cusadi_fns):
+        return self.qp_backend.set_cusadi_functions(cusadi_fns)
 
     def _setup_qp_backend(self, problem, qp_cfg,  x_init, p_init):
         if self.qp_solver == "osqp":
-            self.qp_backend = OSQPBackend(problem, qp_cfg)
+            self.qp_backend = ADMMBackend(problem, qp_cfg)
         elif self.qp_solver == "relaxed_log":
-            self.qp_backend = RelaxedLogBackend(problem, qp_cfg)
+            self.qp_backend = BarrierBackend(problem, qp_cfg)
         else:
             raise ValueError(f"Unknown solver: {self.qp_solver}")
         self.qp_backend.setup(x_init=x_init, p_init=p_init)

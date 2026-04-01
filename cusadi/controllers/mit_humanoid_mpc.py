@@ -7,6 +7,27 @@ from cusadi.optimization import OptimizationProblem
 from cusadi.visualization import Visualizer3D
 from cusadi.controllers.utils import ActuatorSpec
 
+def make_geometric_dt(T_horizon: float, N: int, ratio: float) -> np.ndarray:
+    """Return a non-uniform dt array that sums to T_horizon.
+
+    Steps grow geometrically from fine to coarse: dt[k] = dt_0 * ratio^k.
+
+    Args:
+        T_horizon: total horizon duration [s]
+        N:         number of timesteps
+        ratio:     growth ratio between consecutive steps (> 1 → finer → coarser)
+
+    Returns:
+        dt: (N,) array of timesteps
+    """
+    if ratio == 1.0:
+        return np.full(N, T_horizon / N)
+    k = np.arange(N, dtype=float)
+    weights = ratio ** k
+    dt = weights * T_horizon / weights.sum()
+    return dt
+
+
 ACTUATOR_SPECS = {
     "hip_yaw": ActuatorSpec(1.6841e-4, 6.0),
     "hip_abad": ActuatorSpec(1.6841e-4, 6.0),
@@ -29,9 +50,9 @@ HUMANOID_ACTUATOR_ORDER = [
 class MITHumanoidModelPredictiveController:
     problem_built: bool = False
 
-    def __init__(self):
-        self.urdf = './robots/mit_humanoid/humanoid_full.urdf'
-        self.model = PinocchioModel(self.urdf, is_floating=True)
+    def __init__(self, urdf_filepath):
+        self.urdf_filepath = urdf_filepath
+        self.model = PinocchioModel(self.urdf_filepath, is_floating=True)
         self.last_soln = None
 
     def set_parameters(self, parameter_vec, field: str = None, val=None, env_ids=None):
@@ -58,40 +79,129 @@ class MITHumanoidModelPredictiveController:
                     val_t = torch.as_tensor(val_flat, dtype=parameter_vec.dtype,
                                             device=parameter_vec.device)
                     idx_t = torch.as_tensor(idx, dtype=torch.long, device=parameter_vec.device)
-                    parameter_vec[:, idx_t] = val_t
+                    if env_ids is None:
+                        parameter_vec[:, idx_t] = val_t
+                    else:
+                        env_t = torch.as_tensor(env_ids, dtype=torch.long, device=parameter_vec.device)
+                        parameter_vec[env_t[:, None], idx_t[None, :]] = val_t
                 else:
                     parameter_vec.flat[idx] = val_flat
             return parameter_vec
 
         idx = self.formulation.parameters[field].idx          # contiguous int array
-        val_flat = np.asarray(val).flatten(order='F')         # col-major, matching CasADi layout
 
         if is_torch:
-            val_t = torch.as_tensor(val_flat, dtype=parameter_vec.dtype,
-                                    device=parameter_vec.device)
             idx_t = torch.as_tensor(idx, dtype=torch.long, device=parameter_vec.device)
+            n_rows = parameter_vec.shape[0]
             if env_ids is None:
-                parameter_vec[:, idx_t] = val_t
+                env_t = torch.arange(n_rows, dtype=torch.long, device=parameter_vec.device)
             else:
                 env_t = torch.as_tensor(env_ids, dtype=torch.long, device=parameter_vec.device)
+
+            if isinstance(val, torch.Tensor):
+                val_t = val.to(dtype=parameter_vec.dtype, device=parameter_vec.device)
+                if val_t.ndim == 1:
+                    val_t = val_t.unsqueeze(0)
+                elif val_t.ndim > 2:
+                    val_t = val_t.transpose(-2, -1).reshape(val_t.shape[0], -1)
+                if val_t.shape[0] == 1 and env_t.numel() > 1:
+                    val_t = val_t.expand(env_t.numel(), -1)
+                elif val_t.shape[0] != env_t.numel():
+                    raise ValueError(
+                        f"Tensor value for parameter '{field}' has batch dimension {val_t.shape[0]} "
+                        f"but expected 1 or {env_t.numel()}."
+                    )
+                if val_t.shape[1] != len(idx):
+                    raise ValueError(
+                        f"Tensor value for parameter '{field}' has flattened size {val_t.shape[1]} "
+                        f"but expected {len(idx)}."
+                    )
+                parameter_vec[env_t[:, None], idx_t[None, :]] = val_t
+            else:
+                val_flat = np.asarray(val).flatten(order='F')         # col-major, matching CasADi layout
+                val_t = torch.as_tensor(val_flat, dtype=parameter_vec.dtype,
+                                        device=parameter_vec.device)
                 parameter_vec[env_t[:, None], idx_t[None, :]] = val_t
         else:
+            val_flat = np.asarray(val).flatten(order='F')         # col-major, matching CasADi layout
             parameter_vec.flat[idx] = val_flat
         return parameter_vec
 
+    def _get_env_vector_numpy(self, tensor, env_idx=0):
+        try:
+            import torch
+            if isinstance(tensor, torch.Tensor):
+                if tensor.ndim == 1:
+                    return tensor.detach().cpu().numpy()
+                return tensor[env_idx].detach().cpu().numpy()
+        except ImportError:
+            pass
+
+        array = np.asarray(tensor)
+        if array.ndim == 1:
+            return array
+        return array[env_idx]
+
+    def _format_named_block(self, name, value, precision=4):
+        return (
+            f"{name} {tuple(value.shape)}\n"
+            f"{np.array2string(value, precision=precision, suppress_small=False)}"
+        )
+
+    def print_debug_tensors(self, parameter_tensor=None, solution_tensor=None, env_idx=0, precision=4):
+        """Pretty-print MPC parameters and/or solution for one environment.
+
+        Args:
+            parameter_tensor: batched or single parameter vector in CasADi column-major layout.
+            solution_tensor: batched or single solution vector in CasADi column-major layout.
+            env_idx: environment row to inspect when tensors are batched.
+            precision: numpy print precision.
+        """
+        import torch
+        torch.set_printoptions(profile="full")
+        blocks = []
+
+        if parameter_tensor is not None:
+            p_env = self._get_env_vector_numpy(parameter_tensor, env_idx=env_idx)
+            blocks.append(f"=== Parameters: env {env_idx} ===")
+            for name, param in self.formulation.parameters.items():
+                value = np.asarray(p_env[param.idx]).reshape(param.dim, order='F')
+                blocks.append(self._format_named_block(name, value, precision=precision))
+
+        if solution_tensor is not None:
+            x_env = self._get_env_vector_numpy(solution_tensor, env_idx=env_idx)
+            x_traj = np.asarray(x_env).reshape((self.N_STAGE, self.N_HORIZON), order='F')
+            blocks.append(f"=== Solution: env {env_idx} ===")
+            blocks.append(self._format_named_block("X_opt", x_traj, precision=precision))
+
+            dq_traj = x_traj[self.dq_idx, :]
+            v_traj = x_traj[self.v_idx, :]
+            F_traj = x_traj[self.F_idx, :]
+            blocks.append(self._format_named_block("dq_opt", dq_traj, precision=precision))
+            blocks.append(self._format_named_block("v_opt", v_traj, precision=precision))
+            blocks.append(self._format_named_block("F_opt", F_traj, precision=precision))
+
+        if not blocks:
+            print("No parameter_tensor or solution_tensor provided.")
+            return
+
+        print("\n\n".join(blocks))
+
     def set_controller_constants(self):
-        self.N_HORIZON = 12
+        self.fn_opts = {'cse': True, 'post_expand': True}
+        self.N_HORIZON = 10
         self.N_CONTACT = 4
         self.N_F = self.N_CONTACT * 3
-        self.N_JOINTS = self.model.NJ # num. joints
+        self.N_FB = 6
+        self.N_Q_LEG = 5
+        self.N_Q_ARM = 4
         self.N_Q = self.model.cpin_model.nq # num. gen. coord.
         self.N_V = self.model.cpin_model.nv # num. gen. vel.
         self.N_STAGE = 2 * self.N_V + self.N_F
-        self.N_DV = 2 * self.N_V # num. decision vars
+        self.N_DV = self.N_STAGE * self.N_HORIZON # num. decision vars
         self.dq_idx = np.arange(self.N_V)
         self.v_idx = self.dq_idx + self.N_V
         self.F_idx = 2*self.N_V + np.arange(self.N_F)
-        self.dt = 1.0/30
         self.right_toe_idx = [0, 1, 2]
         self.left_toe_idx = [3, 4, 5]
         self.right_heel_idx = [6, 7, 8]
@@ -101,13 +211,21 @@ class MITHumanoidModelPredictiveController:
         self.contact_z_idx = [2, 5, 8, 11]
         self.collision_radius = 0.15
         self.offset_lateral_stance = 0.2
+        # self.q_nominal = np.array([
+        #     0.0, 0.0, 0.62, 0.0, 0.0, 0.0, 1.0,
+        #     0.0, -0.1, -0.724757, 1.412282, -0.68752,
+        #     0.0,  0.1, -0.724757, 1.412282, -0.68752,
+        #     0.0, -0.1, 0.0, 0.0,
+        #     0.0, 0.1, 0.0, 0.0
+        #     ])
         self.q_nominal = np.array([
-            0.0, 0.0, 0.62, 0.0, 0.0, 0.0, 1.0,
-            0.0, -0.1, -0.724757, 1.412282, -0.68752,
-            0.0,  0.1, -0.724757, 1.412282, -0.68752,
-            0.0, -0.1, 0.0, 0.0,
-            0.0, 0.1, 0.0, 0.0
+            0.0, 0.0, 0.65, 0.0, 0.0, 0.0, 1.0,
+            0.0, -0.1, -0.6, 1, -0.5,
+            0.0, -0.1, -0.6, 1, -0.5,
+            0.2, -0.1, 0.0, -0.5,
+            0.2, 0.1, 0.0, -0.5
             ])
+        self.q_nominal_traj = np.tile(self.q_nominal, (self.N_HORIZON, 1)).T
         self.q_max = self.model.pin_model.upperPositionLimit
         self.q_min = self.model.pin_model.lowerPositionLimit
         self.qd_lim = self.model.pin_model.velocityLimit
@@ -139,6 +257,9 @@ class MITHumanoidModelPredictiveController:
         self.formulation = OptimizationProblem('mit_humanoid_mpc')
         self.set_controller_constants()
         self.build_bezier_swing_fn()
+        self.build_contact_schedule_fn()
+        self.build_desired_trajectory_fn()
+        self.build_torque_interpolation_fn()
 
         # Decision variables
         X_opt = self.formulation.add_variable(self.N_STAGE, self.N_HORIZON, 'X_opt')
@@ -147,56 +268,90 @@ class MITHumanoidModelPredictiveController:
         F_opt = X_opt[self.F_idx, :]
 
         # Parameters
-        q_0 = self.formulation.add_parameter(self.N_Q, 1, 'q_0')
+        # dt = self.formulation.add_parameter(self.N_HORIZON, 1, 'dt', init_value=np.array([0.02346344, 0.03050247, 0.03965321, 0.05154918, 0.06701393, 0.08711811, 0.11325354, 0.1472296 , 0.19139848, 0.24881803]))
+        dt = self.formulation.add_parameter(self.N_HORIZON, 1, 'dt', init_value=np.array([0.02092357, 0.02845606, 0.03870024, 0.05263233, 0.07157996, 0.09734875, 0.1323943 , 0.18005625, 0.2448765 , 0.33303204]))
+        q_0 = self.formulation.add_parameter(self.N_Q, 1, 'q_0', init_value=self.q_nominal)
         v_0 = self.formulation.add_parameter(self.N_V, 1, 'v_0')
-        q_nom = self.formulation.add_parameter(self.N_Q, 1, 'q_nom')
-        q_des = self.formulation.add_parameter(self.N_Q, self.N_HORIZON, 'q_des')
+        # q_nom = self.formulation.add_parameter(self.N_Q, 1, 'q_nom', init_value=self.q_nominal)
+        q_des = self.formulation.add_parameter(self.N_Q, self.N_HORIZON, 'q_des', init_value=self.q_nominal_traj)
+        v_des = self.formulation.add_parameter(self.N_V, self.N_HORIZON, 'v_des')
+        F_des = self.formulation.add_parameter(self.N_F, self.N_HORIZON, 'F_des')
         phi_traj = self.formulation.add_parameter(self.N_CONTACT, self.N_HORIZON, 'phi_traj')
-        contact_traj = self.formulation.add_parameter(self.N_CONTACT, self.N_HORIZON, 'contact_traj')
-        
-        Q_fb = ca.DM([10, 10, 10, 10, 10, 10])
-        Q_leg = ca.DM([10, 10, 10, 10, 10])
-        Q_arm = ca.DM([10, 10, 10, 10])
+        contact_traj = self.formulation.add_parameter(self.N_CONTACT, self.N_HORIZON, 'contact_traj', init_value=np.ones((self.N_CONTACT, self.N_HORIZON)))
+        Q_fb = self.formulation.add_parameter(self.N_FB, 1, 'Q_fb', init_value=np.array([0, 0, 1000, 1200, 1200, 1200]))
+        Q_leg = self.formulation.add_parameter(self.N_Q_LEG, 1, 'Q_leg', init_value=np.array([100, 100, 50, 25, 20]))
+        Q_arm = self.formulation.add_parameter(self.N_Q_ARM, 1, 'Q_arm', init_value=np.array([20, 20, 20, 20]))
+        Qv_fb = self.formulation.add_parameter(self.N_FB, 1, 'Qd_fb', init_value=np.array([800, 800, 400, 100, 100, 100]))
+        Qv_leg = self.formulation.add_parameter(self.N_Q_LEG, 1, 'Qd_leg', init_value=np.array([5, 5, 0.1, 0.1, 0.1]))
+        Qv_arm = self.formulation.add_parameter(self.N_Q_ARM, 1, 'Qd_arm', init_value=np.array([5, 5, 5, 5]))
+        Qa_fb = self.formulation.add_parameter(self.N_FB, 1, 'Qa_fb', init_value=np.array([0] * self.N_FB))
+        Qa_leg = self.formulation.add_parameter(self.N_Q_LEG, 1, 'Qa_leg', init_value=np.array([0] * self.N_Q_LEG))
+        Qa_arm = self.formulation.add_parameter(self.N_Q_ARM, 1, 'Qa_arm', init_value=np.array([0] * self.N_Q_ARM))
+        R_F = self.formulation.add_parameter(self.N_F, 1, 'R_F', init_value=np.array([0.1] * self.N_F))
+
         Q_q = ca.diag(ca.vertcat(Q_fb, Q_leg, Q_leg, Q_arm, Q_arm))
+        Q_v = ca.diag(ca.vertcat(Qv_fb, Qv_leg, Qv_leg, Qv_arm, Qv_arm))
+        Q_a = ca.diag(ca.vertcat(Qa_fb, Qa_leg, Qa_leg, Qa_arm, Qa_arm))
 
         # Useful expressions
-        q_traj = self.model.get_integrated_states(q_nom, dq_opt)
+        q_traj = self.model.get_integrated_states(q_0, dq_opt)
+
+        # ! Which frame is v_0, v_des going to be defined in?
         v_traj = v_opt
-        v_traj_appended = ca.horzcat(v_0, v_traj)
-        a_traj = (v_traj_appended[:, 1:] - v_traj_appended[:, :-1]) / self.dt
+        v_traj_appended = ca.horzcat(v_0, v_traj) # ! Assume these are body frame
+        a_traj = (v_traj_appended[:, 1:] - v_traj_appended[:, :-1]) / ca.repmat(dt.T, self.N_V, 1)
         F_traj = F_opt
 
         [h_contact_des_traj, v_foot_des_traj, a_foot_des_traj] = self.fn_swing_traj(
             phi_traj, 0.02, -0.02, 0.05)
-        fwd_kin_traj = self.model.get_forward_kinematics(q=q_traj,
-                                                         v=v_traj,
-                                                         frames=self.end_eff_frames)
+
         cost = 0
         for k in range(self.N_HORIZON):
             # ! Cost
+            dt_k = dt[k]
             q_k = q_traj[:, k]
-            v_k = v_traj[:, k]
-            a_k = a_traj[:, k]
+            v_k = v_traj[:, k] # Body
+            a_k = a_traj[:, k] # Body
             F_k = F_traj[:, k]
             q_des_k = q_des[:, k]
+            v_des_k = v_des[:, k]
+            F_des_k = F_des[:, k]
 
-            q_err_k = self.model.get_state_error(q_k, q_des_k)
-            cost += q_err_k.T @ Q_q @  q_err_k
-            cost += 1e-2 * v_k.T @ v_k
-            cost += 1e-5 * F_k.T @ F_k
-            cost += 1e-5 * a_k.T @ a_k
+            # ! All quantities returned are wrt WORLD frame
+            # ! need to pass in world frame v_traj
+            fwd_kin_k = self.model.get_forward_kinematics(
+                q=q_k, v=v_k, frames=self.end_eff_frames)
+
+            # Align q_des_k to the same quaternion cover as q_k
+            dot_quat = (q_k[3]*q_des_k[3] + q_k[4]*q_des_k[4] +
+                        q_k[5]*q_des_k[5] + q_k[6]*q_des_k[6])
+            sign = ca.if_else(dot_quat >= 0, 1.0, -1.0)
+            q_des_k_aligned = ca.vertcat(
+                q_des_k[:3],          # position — unchanged
+                sign * q_des_k[3:7],  # quaternion — flipped if needed
+                q_des_k[7:]           # joints — unchanged
+            )
+            q_err_k = self.model.get_state_error(q_k, q_des_k_aligned)
+            v_err_k = v_des_k - v_k
+            F_err_k = F_des_k - F_k
+            cost += q_err_k.T @ Q_q @  q_err_k * dt_k
+            cost += v_err_k.T @ Q_v @ v_err_k * dt_k
+            cost += a_k.T @ Q_a @ a_k * dt_k
+            cost += F_err_k.T @ ca.diag(R_F) @ F_err_k * dt_k
 
             # ************ Dynamics and integration ************* #
             if k == 0:
                 q_prev = q_0
                 v_prev = v_0
-                a_prev = ca.MX(self.N_V, 1)
             else:
                 q_prev = q_traj[:, k-1]
                 v_prev = v_traj[:, k-1]
-                a_prev = a_traj[:, k-1]
-            v_int = v_prev + a_prev * self.dt
-            q_integrated = self.model.get_integrated_states(q_prev, v_int * self.dt)
+
+            qx = q_k[3]; qy = q_k[4]; qz = q_k[5]; qw = q_k[6]
+
+            # ! Convert to world frame, then integrate
+            v_int = v_prev + a_k * dt_k
+            q_integrated = self.model.get_integrated_states(q_prev, v_int * dt_k)
             q_gap = self.model.get_state_error(q_k, q_integrated)
             self.formulation.add_equality_constraint(q_gap, f'pos_integration_{k}')
             tau_inertial_k = self.model.get_inverse_dynamics(q_k, v_k, a_k)[:6] # M*qdd + h(q, qd)
@@ -205,10 +360,10 @@ class MITHumanoidModelPredictiveController:
             self.formulation.add_equality_constraint(tau_inertial_k - tau_external_k, f'dynamics_{k}')
 
             # ************ Foot swing ************* #
-            p_contact_k = ca.vertcat(fwd_kin_traj['p_right_toe'][:, k],
-                                     fwd_kin_traj['p_left_toe'][:, k],
-                                     fwd_kin_traj['p_right_heel'][:, k],
-                                     fwd_kin_traj['p_left_heel'][:, k]
+            p_contact_k = ca.vertcat(fwd_kin_k['p_right_toe'],
+                                     fwd_kin_k['p_left_toe'],
+                                     fwd_kin_k['p_right_heel'],
+                                     fwd_kin_k['p_left_heel']
                                      )
             h_contact_des_k = h_contact_des_traj[:, k]
             h_contact_k = p_contact_k[self.contact_z_idx] # ? How to deal with this for a reference?
@@ -220,10 +375,10 @@ class MITHumanoidModelPredictiveController:
             F_y = F_k[self.contact_y_idx]
             F_z = F_k[self.contact_z_idx]
             v_contact_k = ca.vertcat(
-                fwd_kin_traj['v_right_toe'][:, k],
-                fwd_kin_traj['v_left_toe'][:, k],
-                fwd_kin_traj['v_right_heel'][:, k],
-                fwd_kin_traj['v_left_heel'][:, k],
+                fwd_kin_k['v_right_toe'],
+                fwd_kin_k['v_left_toe'],
+                fwd_kin_k['v_right_heel'],
+                fwd_kin_k['v_left_heel'],
             )
             v_foot_x_k = v_contact_k[self.contact_x_idx]
             v_foot_y_k = v_contact_k[self.contact_y_idx]
@@ -232,11 +387,19 @@ class MITHumanoidModelPredictiveController:
                 F_x, f'friction_x_{k}', lb=-mu*F_z/np.sqrt(2), ub=mu*F_z/np.sqrt(2))
             self.formulation.add_inequality_constraint(
                 F_y, f'friction_y_{k}', lb=-mu*F_z/np.sqrt(2), ub=mu*F_z/np.sqrt(2))
-            self.formulation.add_inequality_constraint(
-                F_z, f'nonnegative_{k}', lb=ca.MX(self.N_CONTACT, 1))
-            self.formulation.add_equality_constraint(F_z * (1.0  - contact_k), f'contact_{k}')
+            # self.formulation.add_inequality_constraint(
+            #     F_z, f'nonnegative_{k}', lb=ca.MX(self.N_CONTACT, 1))
+            # self.formulation.add_equality_constraint(F_z * (1.0  - contact_k), f'contact_{k}')
             self.formulation.add_equality_constraint(v_foot_x_k * contact_k, f'contact_x_vel_{k}')
             self.formulation.add_equality_constraint(v_foot_y_k * contact_k, f'contact_y_vel_{k}')
+
+            # F_lat_norm = ca.sqrt(F_x * F_x + F_y * F_y + 0.01)
+            # friction_constraint = contact_k * F_lat_norm - mu * contact_k * F_z
+            # self.formulation.add_inequality_constraint(0.005*friction_constraint, f"friction_{k}", ub=ca.MX(self.N_CONTACT, 1))
+            self.formulation.add_equality_constraint(F_k[self.right_toe_idx] * (1 - contact_k[0]), f'contact_FR_{k}')
+            self.formulation.add_equality_constraint(F_k[self.left_toe_idx] * (1 - contact_k[1]), f'contact_FL_{k}')
+            self.formulation.add_equality_constraint(F_k[self.right_heel_idx] * (1 - contact_k[2]), f'contact_BR_{k}')
+            self.formulation.add_equality_constraint(F_k[self.left_heel_idx] * (1 - contact_k[3]), f'contact_BL_{k}')
 
             # ************ Lateral foot spacing in yaw-aligned body frame ************* #
             q_fb_k = q_k[:7]
@@ -272,12 +435,22 @@ class MITHumanoidModelPredictiveController:
             self.formulation.add_inequality_constraint(
                 dist_heel_lateral, f'heel_lateral_spacing_{k}', lb=ca.MX(1, 1))
 
+            fwd_kin_hip = self.model.get_forward_kinematics(q=q_k, frames=['right_hip_yaw', 'left_hip_yaw'])
+            d_right_foot = 0.5 * (p_contact_k[self.right_toe_idx] + p_contact_k[self.right_heel_idx]) \
+                         - fwd_kin_hip['p_right_hip_yaw']
+            d_left_foot = 0.5 * (p_contact_k[self.left_toe_idx] + p_contact_k[self.left_heel_idx]) \
+                        - - fwd_kin_hip['p_left_hip_yaw']
+            l_leg_max = 0.58
+            right_length_constraint = d_right_foot.T @ d_right_foot - l_leg_max ** 2
+            left_length_constraint = d_left_foot.T @ d_left_foot - l_leg_max ** 2
+            self.formulation.add_inequality_constraint(right_length_constraint, f"right_leg_max_{k}", ub=ca.MX(1, 1))
+            self.formulation.add_inequality_constraint(left_length_constraint, f"left_leg_max_{k}", ub=ca.MX(1, 1))
+
         self.formulation.set_objective(cost)
         self.formulation.post_process()
         self.problem_built = True
 
     def build_bezier_swing_fn(self):
-        fn_opts = {'cse': True, 'post_expand': True}
         t_swing = ca.MX.sym('t_swing', 1, 1)
         v_TO = ca.MX.sym('v_TO', 1, 1)
         v_TD = ca.MX.sym('v_TD', 1, 1)
@@ -296,7 +469,7 @@ class MITHumanoidModelPredictiveController:
         fn_swing_traj = ca.Function('fn_swing_traj',
             [t_swing, v_TO, v_TD, h_swing], [B_t, B_dot_t, B_ddot_t],
             ['t_swing', 'v_TO', 'v_TD', 'h_swing'], ['B_t', 'B_dot_t', 'B_ddot_t'],
-            fn_opts)
+            self.fn_opts)
         fn_swing_traj = fn_swing_traj.map(self.N_HORIZON, 'serial')
 
         t_traj = ca.MX.sym('t_traj', self.N_CONTACT, self.N_HORIZON)
@@ -312,7 +485,7 @@ class MITHumanoidModelPredictiveController:
         self.fn_swing_traj = ca.Function('fn_swing_traj',
             [t_traj, v_TO, v_TD, h_swing], [h_swing_traj, v_swing_traj, a_swing_traj],
             ['t_traj', 'v_TO', 'v_TD', 'h_swing'], ['h_swing_traj', 'v_swing_traj', 'a_swing_traj'],
-            fn_opts)
+            self.fn_opts)
         return self.fn_swing_traj
 
     def build_contact_schedule_fn(self):
@@ -413,7 +586,7 @@ class MITHumanoidModelPredictiveController:
         phase_swing      = ca.horzcat(*swing_cols)    # N_GC x N
 
         self.fn_contact_schedule = ca.Function(
-            'update_contact_schedule',
+            'fn_contact_schedule',
             [phase, t_horizon, t_period_remaining,
              t_period_curr, phase_offset_curr, phase_switch_curr,
              t_period_queue, phase_offset_queue, phase_switch_queue,
@@ -423,11 +596,95 @@ class MITHumanoidModelPredictiveController:
              't_period_curr', 'phase_offset_curr', 'phase_switch_curr',
              't_period_queue', 'phase_offset_queue', 'phase_switch_queue',
              'gait_changed'],
-            ['contact_schedule', 'phase_swing']
+            ['contact_schedule', 'phase_swing'],
+            self.fn_opts
         )
         return self.fn_contact_schedule
 
-    def build_interpolation_fn(self):
+    def build_desired_trajectory_fn(self):
+        """Build CasADi function for a simple command-tracking desired trajectory.
+
+        The command is ``[z_des, v_x_body, v_y_body, w_z]``. The desired base
+        pose is propagated over the horizon in the horizontal plane while using
+        a quaternion representation for orientation. Joint references are built
+        from the nominal posture with light arm shaping, and contact forces are
+        regularized around the previous solution at the first step and then
+        evenly distributed across active contacts afterward.
+        """
+
+        q_0_sym = ca.MX.sym('q_0', self.N_Q, 1)
+        cmd_sym = ca.MX.sym('cmd', 4, 1)
+        dt_sym = ca.MX.sym('dt', self.N_HORIZON, 1)
+        contact_sym = ca.MX.sym('contact_traj', self.N_CONTACT * self.N_HORIZON, 1)
+        F_prev_sym = ca.MX.sym('F_prev', self.N_F, 1)
+
+        q_des_traj = ca.MX(ca.DM(self.q_nominal_traj))
+        qd_des_traj = ca.MX.zeros(self.N_V, self.N_HORIZON)
+        F_des_traj = ca.MX.zeros(self.N_F, self.N_HORIZON)
+        contact_traj = ca.reshape(contact_sym, self.N_CONTACT, self.N_HORIZON)
+
+        # Posture shaping about the nominal configuration.
+        q_des_traj[2, :] = cmd_sym[0]
+        q_des_traj[[17, 21], :] = 0.2
+        q_des_traj[[20, 24], :] = -0.5
+
+        # Free-flyer tangent coordinates in Pinocchio are [v_xyz, w_xyz, ...].
+        qd_des_traj[0, :] = cmd_sym[1]
+        qd_des_traj[1, :] = cmd_sym[2]
+        qd_des_traj[5, :] = cmd_sym[3]
+
+        for k in range(self.N_HORIZON):
+            if k == 0:
+                x_prev = q_0_sym[0]
+                y_prev = q_0_sym[1]
+                qx_prev = q_0_sym[3]
+                qy_prev = q_0_sym[4]
+                qz_prev = q_0_sym[5]
+                qw_prev = q_0_sym[6]
+            else:
+                x_prev = q_des_traj[0, k - 1]
+                y_prev = q_des_traj[1, k - 1]
+                qx_prev = q_des_traj[3, k - 1]
+                qy_prev = q_des_traj[4, k - 1]
+                qz_prev = q_des_traj[5, k - 1]
+                qw_prev = q_des_traj[6, k - 1]
+
+            yaw_prev = ca.atan2(
+                2 * (qw_prev * qz_prev + qx_prev * qy_prev),
+                1 - 2 * (qy_prev * qy_prev + qz_prev * qz_prev),
+            )
+            yaw_k = ca.atan2(ca.sin(yaw_prev + cmd_sym[3] * dt_sym[k]),
+                             ca.cos(yaw_prev + cmd_sym[3] * dt_sym[k]))
+
+            c_yaw = ca.cos(yaw_prev)
+            s_yaw = ca.sin(yaw_prev)
+            x_k = x_prev + dt_sym[k] * (cmd_sym[1] * c_yaw - cmd_sym[2] * s_yaw)
+            y_k = y_prev + dt_sym[k] * (cmd_sym[1] * s_yaw + cmd_sym[2] * c_yaw)
+
+            q_des_traj[0, k] = x_k
+            q_des_traj[1, k] = y_k
+            q_des_traj[3, k] = 0.0
+            q_des_traj[4, k] = 0.0
+            q_des_traj[5, k] = ca.sin(yaw_k / 2)
+            q_des_traj[6, k] = ca.cos(yaw_k / 2)
+
+            contact_k = contact_traj[:, k]
+            Fz_k = 0.5 * contact_k
+            F_des_traj[self.contact_z_idx, k] = Fz_k
+
+        F_des_traj[:, 0] = F_prev_sym
+
+        self.fn_desired_trajectory = ca.Function(
+            'fn_desired_trajectory',
+            [q_0_sym, cmd_sym, dt_sym, contact_sym, F_prev_sym],
+            [ca.vec(q_des_traj), ca.vec(qd_des_traj), ca.vec(F_des_traj)],
+            ['q_0', 'cmd', 'dt', 'contact_traj', 'F_prev'],
+            ['q_des', 'qd_des', 'F_des'],
+            self.fn_opts,
+        )
+        return self.fn_desired_trajectory
+
+    def build_torque_interpolation_fn(self):
         """Build CasADi function for torque interpolation between MPC nodes.
 
         Computes actuator torques, states, and forces at elapsed time ``t`` within
@@ -456,7 +713,6 @@ class MITHumanoidModelPredictiveController:
         F       (N_F,)       interpolated contact forces (normalized by bodyweight)
         qdd_0   (N_V,)       finite-difference generalized acceleration at t=0
         """
-        fn_opts = {'cse': True, 'post_expand': True}
 
         # ---- symbolic inputs ----
         t_sym        = ca.MX.sym('t')
@@ -484,10 +740,12 @@ class MITHumanoidModelPredictiveController:
         # Finite-difference acceleration (consistent with MPC dynamics constraint)
         qdd_0 = (v_1 - v_0) / dt_0
 
-        # Linear interpolation between current state and first MPC step
+        # Interpolate configuration on the manifold instead of linearly blending
+        # quaternion components.
+        dq_01 = self.model.get_state_error(q_0, q_1)
         F_interp  = F_0 + t_sym * (F_1 - F_0) / dt_0
         qd_interp = v_0 + t_sym * (v_1 - v_0) / dt_0
-        q_interp  = q_0 + t_sym * (q_1 - q_0) / dt_0
+        q_interp  = self.model.get_integrated_states(q_0, (t_sym / dt_0) * dq_01)
 
         # tau = RNEA(q, v, a) - Jc^T * F_contact
         # Forces in the solution are normalized; scale back by bodyweight
@@ -496,15 +754,15 @@ class MITHumanoidModelPredictiveController:
             q_interp, F_interp * self.model.bodyweight, self.end_eff_frames)
         tau_interp = tau_inertial - tau_contact
 
-        self.fn_interpolation = ca.Function(
-            'compute_interpolation',
+        self.fn_torque_interpolation = ca.Function(
+            'fn_torque_interpolation',
             [t_sym, dt_sym, x_0_sym, q_nom_sym, soln_MPC_sym],
             [tau_interp[6:], q_interp[7:], qd_interp[6:], F_interp, qdd_0],
             ['t', 'dt', 'x_0', 'q_nom', 'soln_MPC'],
             ['tau', 'q', 'qd', 'F', 'qdd_0'],
-            fn_opts
+            self.fn_opts
         )
-        return self.fn_interpolation
+        return self.fn_torque_interpolation
 
     def setup_solver(self, qp_solver, sqp_cfg, qp_cfg):
         # self.solver = self.formulation.setup_solver('ipopt')
@@ -527,19 +785,12 @@ class MITHumanoidModelPredictiveController:
 
     def visualize(self):
         self.visualizer = Visualizer3D()
-        self.visualizer.add_urdf(self.urdf, "mit_humanoid")
+        self.visualizer.add_urdf(self.urdf_filepath, "mit_humanoid")
         self.visualizer.update_urdf("mit_humanoid",
                                     self.q_nominal[:3],
                                     self.q_nominal[3:7],
                                     self.q_nominal[7:],
         )
-
-    def evaluate_trajectory(self, qd_traj, cmd):
-        pass
-
-    def sample_velocity_command(self, seed=None):
-        pass
-
 
 
 
@@ -589,40 +840,73 @@ def plot_solution_summary(q_traj, F_traj, dt, n_contact):
 
 
 
+# TODO: run with args (--compile for different behavior, visualize solution otherwise)
 
 
 
 if __name__ == "__main__":
-    controller = MITHumanoidModelPredictiveController()
+    controller = MITHumanoidModelPredictiveController('../../../extensions/mit_humanoid/assets/urdf/humanoid_full_sf.urdf')
     controller.build()
     controller.setup_solver(
         qp_solver='osqp',
         qp_cfg={'max_iter': 25},
         sqp_cfg={'max_iter': 1}
     )
-
-    q_des = np.tile(controller.q_nominal, (controller.N_HORIZON, 1)).T
-    q_des[0, :]
     controller.formulation.set_parameter("q_0", controller.q_nominal)
-    controller.formulation.set_parameter("q_nom", controller.q_nominal)
-    controller.formulation.set_parameter("q_des", q_des)
+    controller.formulation.set_parameter("q_des", controller.q_nominal_traj)
     controller.formulation.set_parameter("contact_traj", np.ones((controller.N_CONTACT, controller.N_HORIZON)))
-
     p_eval = controller.formulation.get_parameter_vec()
-    soln_opt = controller.solve(x=None, p=p_eval)
-    soln_traj = soln_opt.reshape(-1, controller.N_HORIZON, order='F')
-    dq_traj = soln_traj[controller.dq_idx, :]
-    v_traj = soln_traj[controller.v_idx, :]
-    F_traj = soln_traj[controller.F_idx, :]
-    q_traj = controller.model.get_integrated_states(controller.q_nominal, dq_traj).toarray()
-    plot_solution_summary(q_traj, F_traj, controller.dt, controller.N_CONTACT)
 
-    pos_traj = q_traj[:3, :]
-    ori_traj = q_traj[3:7, :]
-    jnt_traj = q_traj[7:, :]
-    controller.visualize()
-    controller.visualizer.add_urdf_trajectory(
-        'mit_humanoid', pos_traj, ori_traj, jnt_traj, dt=controller.dt)
+    import sys
+    import torch
+    from cusadi.parallelization import parallelize_functions
+    BATCH_SIZE = 512
+    controller_fns = controller.solver.setup_parallelization('cudss',
+                                                             batch_size=BATCH_SIZE,
+                                                             precision='float',
+                                                             dynamic_batching=False)
+    controller_pfns = parallelize_functions(controller_fns,
+                                            batch_size=BATCH_SIZE,
+                                            precision='float',
+                                            dynamic_batching=False)
+    controller.solver.set_cusadi_functions(controller_pfns)
+    x_tensor = torch.zeros(BATCH_SIZE, controller.N_DV, device='cuda', dtype=torch.float)
+    p_tensor = torch.tensor(p_eval.T, device='cuda', dtype=torch.float)
+    p_tensor = torch.tile(p_tensor, (BATCH_SIZE, 1)).contiguous().float()
+    torch.set_printoptions(precision=20, threshold=sys.maxsize)
+    out = controller.solver.solve_parallelized(x_tensor, p_tensor)
+    # print(out)
+
+    # soln_opt = controller.solver.qp_backend.solve_with_osqp(np.zeros((controller.N_DV, 1)), p_eval)
+    # print(soln_opt.T)
+    # controller.solver.qp_backend.build_parallel_fns('ldl')
+    # soln_opt = controller.solver.solve(np.zeros((120, 1)), p_eval, solve_method='custom')
+    # print("SOLN OPT: ", soln_opt.T)
+
+    # import torch
+    # controller.solver.qp_backend.linsys_method = 'cudss'
+    # print(out[0, :])
+
+    # soln_opt = controller.solve(x=None, p=p_eval)
+    # soln_traj = soln_opt.reshape(-1, controller.N_HORIZON, order='F')
+    # dq_traj = soln_traj[controller.dq_idx, :]
+    # v_traj = soln_traj[controller.v_idx, :]
+    # F_traj = soln_traj[controller.F_idx, :]
+    # q_traj = controller.model.get_integrated_states(controller.q_nominal, dq_traj).toarray()
     
-    while True:
-        pass
+    # import torch
+    # # x_tensor = torch.tensor([soln_opt.T]).squeeze(0)
+    # p_tensor = torch.tensor([p_eval])
+    # controller.print_debug_tensors(p_tensor, out)
+    
+    # plot_solution_summary(q_traj, F_traj, controller.dt, controller.N_CONTACT)
+
+    # pos_traj = q_traj[:3, :]
+    # ori_traj = q_traj[3:7, :]
+    # jnt_traj = q_traj[7:, :]
+    # controller.visualize()
+    # controller.visualizer.add_urdf_trajectory(
+    #     'mit_humanoid', pos_traj, ori_traj, jnt_traj, dt=controller.dt)
+    
+    # while True:
+    #     pass
